@@ -6,6 +6,13 @@ pub struct IndexDB {
     conn: Connection,
 }
 
+#[derive(Debug)]
+struct File {
+    id: i32,
+    name: String,
+    path: String,
+}
+
 impl IndexDB {
     pub fn new() -> Result<Self, rusqlite::Error> {
         Ok(Self {
@@ -55,7 +62,31 @@ impl IndexDB {
         Ok(())
     }
 
-    pub fn add_normal_file(&self, path: PathBuf) -> Result<(), rusqlite::Error> {
+    pub fn search(&self) {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM file WHERE path Like '?'")
+            .unwrap();
+        stmt.execute(["%2%"]).unwrap();
+
+        let person_iter = stmt
+            .query_map([], |row| {
+                Ok(File {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    path: row.get(2)?,
+                })
+            })
+            .unwrap();
+
+        for person in person_iter {
+            println!("Found person {:?}", person.unwrap());
+        }
+        // let person_iter = stmt.query_map([], |row: 'a| Ok(row.clone())).unwrap();
+    }
+
+    pub fn add_file<P: Into<PathBuf>>(&self, path: P) -> Result<(), rusqlite::Error> {
+        let path: PathBuf = path.into();
         // split name and path because I might implement some section or other in the future
         match self.conn.execute(
             "INSERT INTO file (name, path, type) VALUES (?1, ?2, 0)",
@@ -80,8 +111,9 @@ impl IndexDB {
 
 #[test]
 fn db_test() {
-    let db = IndexDB::new().unwrap();
+    let db = IndexDB::open("./testdir/fo.db").unwrap();
     db.setup().unwrap();
+    db.search()
     // db.add_normal_file(PathBuf::from("./test.txt")).unwrap();
 }
 
