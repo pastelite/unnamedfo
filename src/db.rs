@@ -1,140 +1,140 @@
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-use rusqlite::{Connection, ErrorCode};
+use async_std::stream::StreamExt;
+use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
+use sqlx::{query, sqlite::SqliteConnectOptions, Executor, Pool, Result, Sqlite, SqlitePool};
+use sqlx::{ConnectOptions, Row, SqliteConnection};
 
-pub struct IndexDB {
-    conn: Connection,
-}
+use crate::path::FilePath;
+
+// use rusqlite::{Connection, ErrorCode};
 
 #[derive(Debug)]
-struct File {
-    id: i32,
+pub struct File {
     name: String,
     path: String,
 }
 
+pub struct IndexDB {
+    pool: Pool<Sqlite>,
+    path: FilePath,
+}
+
 impl IndexDB {
-    pub fn new() -> Result<Self, rusqlite::Error> {
+    pub async fn new() -> Result<Self> {
+        let a = SqliteConnectOptions::from_str("sqlite://fo.db")?
+            .read_only(false)
+            .create_if_missing(true);
+
+        let pool = SqlitePool::connect_with(a).await?;
         Ok(Self {
-            conn: Connection::open("./fo.db")?,
+            pool,
+            path: FilePath::from("./fo.db"),
         })
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, rusqlite::Error> {
-        Ok(Self {
-            conn: Connection::open(path)?,
-        })
+    pub async fn open(path: &str) -> Result<Self> {
+        let mut path = FilePath::from(path);
+        path.append("fo.db");
+        let a = SqliteConnectOptions::from_str(&("sqlite://".to_owned() + &path.get_path()))?
+            .read_only(false)
+            .create_if_missing(true);
+
+        let pool = SqlitePool::connect_with(a).await?;
+        Ok(Self { pool, path })
     }
 
-    pub fn setup(&self) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS file (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                name  TEXT NOT NULL,
-                path  TEXT NOT NULL,
-                type  INTEGER,
-                dataid INTEGER,
-                FOREIGN KEY (type) REFERENCES typeList(id)
-            );",
-            (),
-        )?;
-        self.conn.execute(
+    pub async fn setup(&mut self) -> Result<()> {
+        // check if the file exists
+        if self.path.exists() {
+            println!("file exists");
+            return Ok(());
+        }
+        // typeList table
+        query(
             "CREATE TABLE IF NOT EXISTS typeList (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                name  TEXT NOT NULL
-            );",
-            (),
-        )?;
-        match self.conn.execute(
-            "INSERT INTO typeList VALUES (0,\"default\"), (1,\"default\")",
-            (),
-        ) {
-            Ok(_) => (),
-            Err(err) => match err {
-                rusqlite::Error::SqliteFailure(e, _) => {
-                    if e.code != ErrorCode::ConstraintViolation {
-                        return Err(err);
-                    }
-                }
-                _ => return Err(err),
-            },
-        };
+            id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            name  TEXT NOT NULL
+        );",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // file Table
+        query(
+            "CREATE TABLE IF NOT EXISTS files (
+            path    TEXT PRIMARY KEY,
+            name    TEXT NOT NULL,
+            type    INTEGER DEFAULT 0,
+            dataid  INTEGER,
+            FOREIGN KEY (type) REFERENCES typeList(id)
+        );",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // add TypeList
+        query("INSERT OR IGNORE INTO typeList VALUES (0,\"any\");")
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+
+        // I spent too much time on this so i'm gonna left it here
+        // {
+        //     Ok(_) => (),
+        //     Err(sqlx::Error::Database(dberror))
+        //         if matches!(
+        //             dberror.as_ref().code(),
+        //             Some(cow) if cow.to_string().eq("1555")
+        //         ) =>
+        //     {
+        //         println!("ignore")
+        //     }
+        //     Err(err) => return Err(err),
+        // };
+    }
+
+    pub async fn add_file(&self, path: FilePath) -> Result<()> {
+        // TODO: use other thing than ignore
+        query("INSERT OR IGNORE INTO files(path,name) VALUES (?,?)")
+            .bind(path.get_path())
+            .bind(path.get_name())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub fn search(&self) {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT * FROM file WHERE path Like '?'")
-            .unwrap();
-        stmt.execute(["%2%"]).unwrap();
-
-        let person_iter = stmt
-            .query_map([], |row| {
-                Ok(File {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    path: row.get(2)?,
-                })
+    pub async fn search(&self, keyword: &str) -> Result<Vec<File>> {
+        let mut data = query("SELECT * FROM files WHERE path LIKE ?")
+            .bind(format!("{}{}{}", "%", keyword, "%"))
+            // .map(|row|{
+            //     row.
+            // })
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|row| File {
+                name: row.get::<String, &str>("name"),
+                path: row.get::<String, &str>("path"),
             })
-            .unwrap();
+            .collect();
+        Ok(data)
 
-        for person in person_iter {
-            println!("Found person {:?}", person.unwrap());
-        }
-        // let person_iter = stmt.query_map([], |row: 'a| Ok(row.clone())).unwrap();
+        // to add other data
     }
 
-    pub fn add_file<P: Into<PathBuf>>(&self, path: P) -> Result<(), rusqlite::Error> {
-        let path: PathBuf = path.into();
-        // split name and path because I might implement some section or other in the future
-        match self.conn.execute(
-            "INSERT INTO file (name, path, type) VALUES (?1, ?2, 0)",
-            [
-                path.file_name().unwrap().to_owned().into_string().unwrap(),
-                path.as_os_str().to_owned().into_string().unwrap(),
-            ],
-        ) {
-            Ok(_) => (),
-            Err(err) => match err {
-                rusqlite::Error::SqliteFailure(e, _)
-                    if e.code != ErrorCode::ConstraintViolation =>
-                {
-                    return Err(err);
-                }
-                _ => return Err(err),
-            },
-        }
-        Ok(())
+    pub fn exists(&self) -> bool {
+        self.path.exists()
     }
 }
 
-#[test]
-fn db_test() {
-    let db = IndexDB::open("./testdir/fo.db").unwrap();
-    db.setup().unwrap();
-    db.search()
-    // db.add_normal_file(PathBuf::from("./test.txt")).unwrap();
+#[async_std::test]
+async fn db_test() {
+    //"./testdir/fo.db"
+    let mut db = IndexDB::new().await.unwrap();
+    db.setup().await.unwrap();
+    db.add_file(FilePath::from("./test.txt")).await.unwrap();
+    println!("{:#?}", db.search("test.txt").await.unwrap());
 }
-
-// Setup DB
-// fn db_setup(path: &PathBuf) -> Result<(), rusqlite::Error> {
-//     let con = Connection::open(&path)?;
-//     con.execute(
-//         "CREATE TABLE IF NOT EXISTS file (
-//             id    INTEGER PRIMARY KEY AUTOINCREMENT,
-//             name  TEXT NOT NULL,
-//             type  INTEGER,
-//             dataid INTEGER
-//         );",
-//         (),
-//     )?;
-//     con.execute(
-//         "CREATE TABLE IF NOT EXISTS typeList (
-//             id    INTEGER PRIMARY KEY AUTOINCREMENT,
-//             name  TEXT NOT NULL
-//         );",
-//         (),
-//     )?;
-//     Ok(())
-// }
