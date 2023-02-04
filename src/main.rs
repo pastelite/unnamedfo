@@ -7,7 +7,7 @@ mod db;
 mod indexer;
 mod path;
 
-use indexer::indexer;
+use indexer::Indexer;
 
 #[derive(Parser, Debug)]
 struct CliArgs {
@@ -28,6 +28,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut db = IndexDB::open(&args.path).await?;
 
-    indexer("./", &mut db, 0).await?;
+    Indexer::open(&mut db).indexing("./", 0).await?;
+
+    // indexer("./", &mut db, 0).await?;
     Ok(())
 }
