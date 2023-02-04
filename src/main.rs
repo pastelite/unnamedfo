@@ -15,6 +15,7 @@ fn default_path() -> PathBuf {
 }
 
 mod db;
+mod indexer;
 mod path;
 
 fn good_file_name(filename: &OsStr) -> bool {
@@ -36,7 +37,7 @@ async fn indexer(path: &Path, cutpath: &FilePath, db: &mut IndexDB) -> Result<()
             let file_name = path.file_name();
             println!("{:?}", path.file_name().unwrap());
             if good_file_name(file_name.unwrap()) {
-                db.add_file(FilePath::from(&path).cut(cutpath)).await?;
+                db.add_file_old(FilePath::from(&path).cut(cutpath)).await?;
                 println!("Name: {:?}", path)
             }
         }

@@ -1,5 +1,6 @@
-use std::{os::windows::prelude::FileExt, path::PathBuf};
+use std::{ops, os::windows::prelude::FileExt, path::PathBuf};
 
+#[derive(Debug)]
 pub struct FilePath {
     data: Vec<String>,
 }
@@ -30,10 +31,53 @@ impl From<&PathBuf> for FilePath {
     }
 }
 
+impl From<&FilePath> for FilePath {
+    fn from(path: &FilePath) -> Self {
+        let path = path.get_path();
+        Self {
+            data: path
+                .split(|char| (char == '/' || char == '\\'))
+                .filter(|s| s != &"." && s != &"")
+                .map(|e| e.to_owned())
+                .collect(),
+        }
+    }
+}
+
+impl ops::Add<&FilePath> for FilePath {
+    type Output = Self;
+
+    fn add(mut self, rhs: &FilePath) -> Self::Output {
+        self.append(rhs);
+        self
+        // let mut data = self.data;
+        // data.append(&mut rhs.data.clone());
+        // Self { data }
+    }
+}
+
+impl ToOwned for FilePath {
+    type Owned = Self;
+
+    fn to_owned(&self) -> Self::Owned {
+        Self {
+            data: self.data.clone(),
+        }
+    }
+}
+
 impl FilePath {
     pub fn get_path(&self) -> String {
         let joined = "./".to_owned() + &self.data.join("/");
         return joined;
+    }
+
+    pub fn as_string(&self) -> String {
+        return self.get_path();
+    }
+
+    pub fn as_path(&self) -> PathBuf {
+        return PathBuf::from(self.get_path());
     }
 
     pub fn get_name(&self) -> String {
@@ -54,9 +98,13 @@ impl FilePath {
         return self;
     }
 
-    pub fn append(&mut self, path: &str) {
-        let path = Self::from(path);
+    pub fn append<P: Into<Self>>(&mut self, path: P) {
+        let path: Self = path.into();
         self.data.append(&mut path.data.clone());
+    }
+
+    pub fn pop(&mut self) {
+        self.data.pop();
     }
 
     pub fn exists(&self) -> bool {
