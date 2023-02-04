@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -27,20 +28,16 @@ pub struct IndexDB {
 }
 
 #[derive(Debug)]
-pub enum ChildrenResult {
-    File {
-        name: String,
-        path: String,
-        last_modified: DateTime<Utc>,
-        md5: String,
-    },
-    Folder {
-        id: i32,
-        name: String,
-        path: String,
-        last_modified: DateTime<Utc>,
-    },
+pub struct ChildItem {
+    pub id: i32,
+    pub path: String,
+    pub last_modified: DateTime<Utc>,
+    pub md5: Option<String>,
+    pub is_folder: bool,
 }
+
+// id, other data
+type ChildrenList = HashMap<String, ChildItem>;
 
 impl IndexDB {
     pub async fn new() -> Result<Self> {
@@ -140,34 +137,30 @@ impl IndexDB {
         Ok(())
     }
 
-    pub async fn add_file_old(&self, path: FilePath) -> Result<()> {
-        // TODO: use other thing than ignore
-        query("INSERT OR REPLACE INTO files(path,name,last_mod,0) VALUES (?,?)")
-            .bind(path.get_path())
-            .bind(path.get_name())
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
     pub async fn add_file<P: Into<FilePath>>(&self, path: P, parent: i32) -> Result<()> {
         // get file
+        dbg!("getfile");
         let path = path.into();
         let full_path = self.get_path().to_owned() + &path;
-        let mut file = FSFile::open(&full_path.as_path())?;
+        let mut file = FSFile::open(&full_path.as_path()).unwrap_or_else(|e| {
+            panic!("error opening file: {}, {:#?}", &full_path.as_string(), e);
+        });
 
         // get hash
+        dbg!("hash");
         let mut hasher = md5::Md5::default();
         std::io::copy(&mut file, &mut hasher)?;
         let hash = Base64::encode_string(&hasher.finalize());
 
         // get last mod
+        dbg!("lastmod");
         let last_mod = file.metadata()?.modified()?;
         let last_mod: DateTime<Utc> = DateTime::from(last_mod);
 
         dbg!(&hash, &last_mod);
 
         // insert
+        dbg!("insert");
         query("INSERT OR REPLACE INTO files(path,name,last_mod,md5,parent) VALUES (?,?,?,?,?)")
             .bind(path.get_path())
             .bind(path.get_name())
@@ -179,7 +172,7 @@ impl IndexDB {
         Ok(())
     }
 
-    pub async fn add_folder<P: Into<FilePath>>(&self, path: P, parent: i32) -> Result<()> {
+    pub async fn add_folder<P: Into<FilePath>>(&self, path: P, parent: i32) -> Result<i32> {
         // get folder
         let path = path.into();
         let full_path = self.get_path().to_owned() + &path;
@@ -190,7 +183,8 @@ impl IndexDB {
         let last_mod: DateTime<Utc> = DateTime::from(last_mod);
 
         // insert
-        query(
+        dbg!("folder insert");
+        let result = query(
             "INSERT OR REPLACE INTO files(path,name,last_mod,parent,is_folder) VALUES (?,?,?,?,1)",
         )
         .bind(path.get_path())
@@ -199,6 +193,21 @@ impl IndexDB {
         .bind(parent)
         .execute(&self.pool)
         .await?;
+        Ok(result.last_insert_rowid() as i32)
+    }
+
+    pub async fn delete(&self, id: i32) -> Result<()> {
+        // delete from file
+        query("DELETE FROM files WHERE id = ?")
+            .bind(&id)
+            .execute(&self.pool)
+            .await?;
+
+        // delete from any
+        query("DELETE FROM any WHERE id = ?")
+            .bind(&id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -221,29 +230,24 @@ impl IndexDB {
         // to add other data
     }
 
-    pub async fn children(&self, id: i32) -> Result<Vec<ChildrenResult>> {
-        let mut data = query("SELECT * FROM files WHERE parent = ?")
+    pub async fn children(&self, id: i32) -> Result<ChildrenList> {
+        let mut data: ChildrenList = query("SELECT * FROM files WHERE parent = ?")
             .bind(id)
             .fetch_all(&self.pool)
             .await?
             .iter()
             .map(|row| {
-                let is_folder = row.get::<bool, &str>("is_folder");
-                if is_folder {
-                    ChildrenResult::Folder {
+                (
+                    row.get::<String, &str>("name"),
+                    ChildItem {
                         id: row.get::<i32, &str>("id"),
-                        name: row.get::<String, &str>("name"),
                         path: row.get::<String, &str>("path"),
                         last_modified: row.get::<DateTime<Utc>, &str>("last_mod"),
-                    }
-                } else {
-                    ChildrenResult::File {
-                        name: row.get::<String, &str>("name"),
-                        path: row.get::<String, &str>("path"),
-                        last_modified: row.get::<DateTime<Utc>, &str>("last_mod"),
-                        md5: row.get::<String, &str>("md5"),
-                    }
-                }
+                        md5: (!row.get::<String, &str>("md5").eq(""))
+                            .then(|| row.get::<String, &str>("md5")),
+                        is_folder: row.get::<bool, &str>("is_folder"),
+                    },
+                )
             })
             .collect();
         Ok(data)

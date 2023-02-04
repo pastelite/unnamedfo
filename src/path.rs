@@ -1,4 +1,4 @@
-use std::{ops, os::windows::prelude::FileExt, path::PathBuf};
+use std::{ffi::OsStr, ops, os::windows::prelude::FileExt, path::PathBuf};
 
 #[derive(Debug)]
 pub struct FilePath {
@@ -20,7 +20,7 @@ impl From<&str> for FilePath {
 
 impl From<&PathBuf> for FilePath {
     fn from(path: &PathBuf) -> Self {
-        let path = path.to_str().unwrap();
+        let path = path.to_str().unwrap_or("");
         Self {
             data: path
                 .split(|char| (char == '/' || char == '\\'))
@@ -81,7 +81,10 @@ impl FilePath {
     }
 
     pub fn get_name(&self) -> String {
-        return self.data.last().unwrap().to_string();
+        return match self.data.last() {
+            Some(d) => d.to_owned(),
+            None => String::new(),
+        };
     }
 
     pub fn cut(mut self, paths: &FilePath) -> Self {

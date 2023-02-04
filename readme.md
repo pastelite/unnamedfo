@@ -1,7 +1,6 @@
-# PicoFileOrganizer
-A simple and lightweight file organizer written in rust
+# UnnamedFileOrganizer
+A simple and lightweight file organizer written in Rust
 
 ## Todo
 [ ] File Indexer
-[ ] More index support
 [ ] File Searcher
