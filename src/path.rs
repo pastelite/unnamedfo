@@ -1,4 +1,9 @@
-use std::{ffi::OsStr, ops, os::windows::prelude::FileExt, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    ops,
+    os::windows::prelude::FileExt,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug)]
 pub struct FilePath {
@@ -34,6 +39,19 @@ impl From<&PathBuf> for FilePath {
 impl From<&FilePath> for FilePath {
     fn from(path: &FilePath) -> Self {
         let path = path.get_path();
+        Self {
+            data: path
+                .split(|char| (char == '/' || char == '\\'))
+                .filter(|s| s != &"." && s != &"")
+                .map(|e| e.to_owned())
+                .collect(),
+        }
+    }
+}
+
+impl From<&Path> for FilePath {
+    fn from(path: &Path) -> Self {
+        let path = path.to_str().unwrap_or("");
         Self {
             data: path
                 .split(|char| (char == '/' || char == '\\'))

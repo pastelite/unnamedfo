@@ -6,6 +6,7 @@ use db::IndexDB;
 mod db;
 mod indexer;
 mod path;
+mod search;
 
 use indexer::Indexer;
 
