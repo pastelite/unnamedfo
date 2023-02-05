@@ -4,8 +4,8 @@ use clap::Parser;
 use db::IndexDB;
 
 mod db;
+mod helper;
 mod indexer;
-mod path;
 mod search;
 
 use indexer::Indexer;

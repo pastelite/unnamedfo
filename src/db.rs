@@ -10,21 +10,15 @@ use md5::{Digest, Md5};
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{query, sqlite::SqliteConnectOptions, Executor, Pool, Result, Sqlite, SqlitePool};
 use sqlx::{ConnectOptions, Row, SqliteConnection};
-use std::fs::{metadata, File as FSFile};
+use std::fs::{metadata, File};
 
-use crate::path::FilePath;
+use crate::helper::{FileHelper, PathHelper};
 
 // use rusqlite::{Connection, ErrorCode};
 
-#[derive(Debug)]
-pub struct File {
-    name: String,
-    path: String,
-}
-
 pub struct IndexDB {
     pool: Pool<Sqlite>,
-    path: FilePath,
+    path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -48,21 +42,21 @@ impl IndexDB {
         let pool = SqlitePool::connect_with(a).await?;
         Ok(Self {
             pool,
-            path: FilePath::from("./fo.db"),
+            path: PathBuf::from("./fo.db"),
         })
     }
 
     /// Open a database file
     /// note: use a path to directory not ./fo.db
-    pub async fn open(path: &str) -> Result<Self> {
-        let mut path = FilePath::from(path);
-        path.append("fo.db");
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut path = PathBuf::from(path.as_ref());
+        path.join("fo.db");
         let db_exists = path.exists();
 
         // connection
-        let db_path = "sqlite://".to_owned() + &path.get_path();
+        let db_path = "sqlite://".to_owned() + path.to_str().unwrap();
         println!("connecting to {}", &db_path);
-        let a = SqliteConnectOptions::from_str(&("sqlite://".to_owned() + &path.get_path()))?
+        let a = SqliteConnectOptions::from_str(&db_path)?
             .create_if_missing(true)
             .read_only(false);
 
@@ -97,13 +91,11 @@ impl IndexDB {
             name        TEXT NOT NULL,
             path        TEXT NOT NULL,
             last_mod    TEXT NOT NULL,
-            md5         TEXT,
             is_folder   INTEGER NOT NULL DEFAULT 0,
             type        INTEGER DEFAULT 0,
             parent      INTEGER,
             FOREIGN KEY (parent) REFERENCES files(id),
             FOREIGN KEY (type) REFERENCES typeList(id),
-            CONSTRAINT md5_if_not_folder CHECK (is_folder = 1 OR md5 IS NOT NULL)
         );",
         )
         .execute(&self.pool)
@@ -137,58 +129,56 @@ impl IndexDB {
         Ok(())
     }
 
-    pub async fn add_file<P: Into<FilePath>>(&self, path: P, parent: i32) -> Result<()> {
+    pub async fn add_file<P: AsRef<Path>>(&self, path: P, parent: i32) -> Result<()> {
         // get file
         dbg!("getfile");
-        let path = path.into();
-        let full_path = self.get_path().to_owned() + &path;
-        let mut file = FSFile::open(&full_path.as_path()).unwrap_or_else(|e| {
-            panic!("error opening file: {}, {:#?}", &full_path.as_string(), e);
-        });
+        let path = PathBuf::from(path.as_ref());
+        let full_path = self.get_path_new().join(&path);
 
         // get hash
-        dbg!("hash");
-        let mut hasher = md5::Md5::default();
-        std::io::copy(&mut file, &mut hasher)?;
-        let hash = Base64::encode_string(&hasher.finalize());
+        // dbg!("hash");
+        // let mut hasher = md5::Md5::default();
+        // std::io::copy(&mut file, &mut hasher)?;
+        // let hash = Base64::encode_string(&hasher.finalize());
 
         // get last mod
         dbg!("lastmod");
-        let last_mod = file.metadata()?.modified()?;
-        let last_mod: DateTime<Utc> = DateTime::from(last_mod);
+        let last_mod = FileHelper::new(&full_path)
+            .last_mod()
+            .unwrap_or(DateTime::from(Utc::now()));
 
-        dbg!(&hash, &last_mod);
+        dbg!(&last_mod);
 
         // insert
         dbg!("insert");
-        query("INSERT OR REPLACE INTO files(path,name,last_mod,md5,parent) VALUES (?,?,?,?,?)")
-            .bind(path.get_path())
-            .bind(path.get_name())
+        query("INSERT OR REPLACE INTO files(path,name,last_modparent) VALUES (?,?,?,?)")
+            .bind(path.format())
+            .bind(path.file_name().unwrap().to_str().unwrap())
             .bind(last_mod.naive_utc().format("%Y-%m-%d %H:%M:%S").to_string())
-            .bind(hash)
+            // .bind(hash)
             .bind(parent)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn add_folder<P: Into<FilePath>>(&self, path: P, parent: i32) -> Result<i32> {
+    pub async fn add_folder<P: AsRef<Path>>(&self, path: P, parent: i32) -> Result<i32> {
         // get folder
-        let path = path.into();
-        let full_path = self.get_path().to_owned() + &path;
-        let file = metadata(&full_path.as_path())?;
+        let path = PathBuf::from(path.as_ref());
+        let full_path = self.get_path_new().join(&path);
 
         // get last mod
-        let last_mod = file.modified()?;
-        let last_mod: DateTime<Utc> = DateTime::from(last_mod);
+        let last_mod = FileHelper::new(&full_path)
+            .last_mod()
+            .unwrap_or(DateTime::from(Utc::now()));
 
         // insert
         dbg!("folder insert");
         let result = query(
             "INSERT OR REPLACE INTO files(path,name,last_mod,parent,is_folder) VALUES (?,?,?,?,1)",
         )
-        .bind(path.get_path())
-        .bind(path.get_name())
+        .bind(path.format())
+        .bind(path.file_name().unwrap().to_str().unwrap())
         .bind(last_mod.naive_utc().format("%Y-%m-%d %H:%M:%S").to_string())
         .bind(parent)
         .execute(&self.pool)
@@ -211,27 +201,27 @@ impl IndexDB {
         Ok(())
     }
 
-    pub async fn search(&self, keyword: &str) -> Result<Vec<File>> {
-        let mut data = query("SELECT * FROM files WHERE path LIKE ?")
-            .bind(format!("{}{}{}", "%", keyword, "%"))
-            // .map(|row|{
-            //     row.
-            // })
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(|row| File {
-                name: row.get::<String, &str>("name"),
-                path: row.get::<String, &str>("path"),
-            })
-            .collect();
-        Ok(data)
+    // pub async fn search(&self, keyword: &str) -> Result<Vec<File>> {
+    //     let mut data = query("SELECT * FROM files WHERE path LIKE ?")
+    //         .bind(format!("{}{}{}", "%", keyword, "%"))
+    //         // .map(|row|{
+    //         //     row.
+    //         // })
+    //         .fetch_all(&self.pool)
+    //         .await?
+    //         .iter()
+    //         .map(|row| File {
+    //             name: row.get::<String, &str>("name"),
+    //             path: row.get::<String, &str>("path"),
+    //         })
+    //         .collect();
+    //     Ok(data)
 
-        // to add other data
-    }
+    //     // to add other data
+    // }
 
     pub async fn children(&self, id: i32) -> Result<ChildrenList> {
-        let mut data: ChildrenList = query("SELECT * FROM files WHERE parent = ?")
+        let data: ChildrenList = query("SELECT * FROM files WHERE parent = ?")
             .bind(id)
             .fetch_all(&self.pool)
             .await?
@@ -257,8 +247,9 @@ impl IndexDB {
         self.path.exists()
     }
 
-    pub fn get_path(&self) -> &FilePath {
-        &self.path
+    pub fn get_path_new(&self) -> PathBuf {
+        PathBuf::from(&self.path)
+        // (&self.path).to_owned().as_path()
     }
 }
 
