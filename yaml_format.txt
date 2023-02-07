@@ -1,0 +1,45 @@
+# format
+file format:
+  _schema:
+    SchemaName:
+      filename:
+      children:
+      data:
+  _meta:
+    schema:
+    ignore: 
+    filename:
+    children:
+    data:
+  _import:
+    - [pattern, var]
+  _tags: #tag for childs
+    filename1: tags
+    filename2: tags2, tags3
+  tags: data, sds #tag for this file
+  other data: data
+
+## Filename
+filename:
+	# pioritise outside
+  # data > meta > schema > import > tags
+  # data will be added together, the same one will be replace by the more priority
+  # also prioritize yaml > txt > none. other doesn't count. if there's yaml ignore text and none
+	- file
+	- file.schema.yaml
+	- file.meta.yaml
+  - file.import.yaml
+  - file.tags.yaml
+  - file.data.yaml:
+  	- _schema.yaml
+    - _meta.yaml
+    - _tags.yaml
+    - _data.yaml
+
+pattern:
+  "{fieldname:{fieldname:or|?}}": "^((or|.+?))$"
+  "{?{or|or2}}": "^(.+?(or|or2))$"
+  "?w": "^\w+$"
+## Pattern
+# {fieldname:{fieldname:or|or2}}
+# no : = 1,2,3

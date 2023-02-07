@@ -1,18 +1,12 @@
+use chrono::{DateTime, Utc};
+use sqlx::Row;
+use sqlx::{query, sqlite::SqliteConnectOptions, Pool, Result, Sqlite, SqlitePool};
 use std::collections::HashMap;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use async_std::stream::StreamExt;
-use base64ct::{Base64, Encoding};
-use chrono::{DateTime, Local, Utc};
-use md5::{Digest, Md5};
-use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
-use sqlx::{query, sqlite::SqliteConnectOptions, Executor, Pool, Result, Sqlite, SqlitePool};
-use sqlx::{ConnectOptions, Row, SqliteConnection};
-use std::fs::{metadata, File};
-
 use crate::helper::{FileHelper, PathHelper};
+use crate::schema::Schema;
 
 // use rusqlite::{Connection, ErrorCode};
 
@@ -49,8 +43,9 @@ impl IndexDB {
     /// Open a database file
     /// note: use a path to directory not ./fo.db
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut path = PathBuf::from(path.as_ref());
-        path.join("fo.db");
+        dbg!(&path.as_ref());
+        let path = PathBuf::from(path.as_ref());
+        let mut path = path.join("fo.db");
         let db_exists = path.exists();
 
         // connection
@@ -95,7 +90,7 @@ impl IndexDB {
             type        INTEGER DEFAULT 0,
             parent      INTEGER,
             FOREIGN KEY (parent) REFERENCES files(id),
-            FOREIGN KEY (type) REFERENCES typeList(id),
+            FOREIGN KEY (type) REFERENCES typeList(id)
         );",
         )
         .execute(&self.pool)
@@ -126,6 +121,17 @@ impl IndexDB {
         .execute(&self.pool)
         .await?;
 
+        // "schema"
+        query(
+            "CREATE TABLE IF NOT EXISTS schema (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            format      TEXT NOT NULL
+        );",
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 
@@ -151,7 +157,7 @@ impl IndexDB {
 
         // insert
         dbg!("insert");
-        query("INSERT OR REPLACE INTO files(path,name,last_modparent) VALUES (?,?,?,?)")
+        query("INSERT OR REPLACE INTO files(path,name,last_mod,parent) VALUES (?,?,?,?)")
             .bind(path.format())
             .bind(path.file_name().unwrap().to_str().unwrap())
             .bind(last_mod.naive_utc().format("%Y-%m-%d %H:%M:%S").to_string())
@@ -173,7 +179,7 @@ impl IndexDB {
             .unwrap_or(DateTime::from(Utc::now()));
 
         // insert
-        dbg!("folder insert");
+        dbg!("folder insert", path.file_name());
         let result = query(
             "INSERT OR REPLACE INTO files(path,name,last_mod,parent,is_folder) VALUES (?,?,?,?,1)",
         )
@@ -250,6 +256,15 @@ impl IndexDB {
     pub fn get_path_new(&self) -> PathBuf {
         PathBuf::from(&self.path)
         // (&self.path).to_owned().as_path()
+    }
+
+    pub async fn save_schema(&self, schema: &Schema) {
+        query("INSERT INTO schema (name, format) VALUES (?,?)")
+            .bind(&schema.name)
+            .bind(&schema.to_format())
+            .execute(&self.pool)
+            .await
+            .unwrap();
     }
 }
 

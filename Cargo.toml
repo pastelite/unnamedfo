@@ -12,5 +12,6 @@ base64ct = {version="1.5.3",features=["alloc"]}
 chrono = {version="0.4.23",features=["clock"]}
 clap = { version = "4.1.4", features = ["derive"] }
 md-5 = "0.10.5"
+regex = "1.7.1"
 serde_yaml = "0.9.17"
 sqlx = {version = "0.6.2",features=["runtime-async-std-native-tls","sqlite","chrono"]}

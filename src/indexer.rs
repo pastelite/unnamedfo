@@ -15,16 +15,12 @@ use crate::{
 };
 
 pub struct Indexer<'a> {
-    md5_save: HashMap<String, String>,
     db: &'a mut IndexDB,
 }
 
 impl<'a> Indexer<'a> {
     pub fn open(db: &'a mut IndexDB) -> Self {
-        Self {
-            md5_save: HashMap::new(),
-            db: db,
-        }
+        Self { db: db }
     }
 
     /// path please start as ./ the working directory is already saved in db
@@ -37,7 +33,9 @@ impl<'a> Indexer<'a> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let path = PathBuf::from(path.as_ref());
         // let path = path.into();
+        dbg!(self.db.get_path_new(), &path);
         let full_path = self.db.get_path_new().join(path);
+        dbg!(&full_path);
         // let full_path = self.db.get_path().to_owned() + &path;
         let dir = fs::read_dir(&full_path)?;
 
@@ -103,6 +101,5 @@ impl<'a> Indexer<'a> {
 async fn test_struct() {
     let mut db = IndexDB::open("./testdir").await.unwrap();
     let mut st = Indexer::open(&mut db);
-    st.indexing("/", 0).await.unwrap();
-    dbg!(st.md5_save);
+    st.indexing("./", 0).await.unwrap();
 }
