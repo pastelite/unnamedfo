@@ -3,6 +3,7 @@ use std::error::Error;
 use clap::Parser;
 use db::IndexDB;
 
+mod config_reader;
 mod db;
 mod helper;
 mod indexer;

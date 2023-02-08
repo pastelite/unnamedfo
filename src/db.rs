@@ -125,7 +125,7 @@ impl IndexDB {
         query(
             "CREATE TABLE IF NOT EXISTS schema (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL,
+            name        TEXT NOT NULL UNIQUE,
             format      TEXT NOT NULL
         );",
         )
@@ -259,7 +259,7 @@ impl IndexDB {
     }
 
     pub async fn save_schema(&self, schema: &Schema) {
-        query("INSERT INTO schema (name, format) VALUES (?,?)")
+        query("INSERT OR REPLACE INTO schema (name, format) VALUES (?,?)")
             .bind(&schema.name)
             .bind(&schema.to_format())
             .execute(&self.pool)

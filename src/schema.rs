@@ -9,7 +9,7 @@ use std::{
 
 use regex::{Captures, Regex};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Schema {
     pub name: String,
     pub fields: Vec<Field>,
@@ -68,31 +68,23 @@ impl Field {
             string.push_str("!");
         }
         string
-        // if self.format != FieldFormat::String {
-        //     string.push_str("(");
-        //     string.push_str(&self.format.to_string());
-        //     string.push_str(")");
-        // }
-        // string
-        // string.push_str(match self.format {
-        //     FieldFormat::Number => "(num)",
-        //     FieldFormat::StringArray => "(str[])",
-        //     _ => "",
-        // });
     }
 }
 
-// impl Debug for Schema {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         f.debug_struct("Schema")
-//             .field("formatted", &self.to_format())
-//             // .field("name", &self.name)
-//             // .field("fields", &self.fields)
-//             // .field("children", &self.children)
-//             // .field("filename", &self.filename)
-//             .finish()
-//     }
-// }
+impl Debug for Schema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_format())
+        // Ok(self.to_format())
+        // f.
+        // f.debug_struct("Schema")
+        //     .field("formatted", &self.to_format())
+        //     // .field("name", &self.name)
+        //     // .field("fields", &self.fields)
+        //     // .field("children", &self.children)
+        //     // .field("filename", &self.filename)
+        //     .finish()
+    }
+}
 
 impl Schema {
     pub fn new(name: String) -> Self {
