@@ -1,13 +1,13 @@
-# UnnamedFileOrganizer
-A simple and easily configurable file organizer written in Rust. Currently very early in development.
+# Unnamed File Organizer
+A simple and easily configurable file organizer written in Rust.
 
-## Todo
-<<<<<<< HEAD
-- [ ] File Indexer
-- [ ] File Searcher
-=======
-- [x] Index file to database
-- [ ] Index tags/other data from yaml database
-- [ ] Organize file as set in yaml.
-- [ ] File Searcher
->>>>>>> 5a5446b5aa5fd44981c7ba6aa1e026e0b19826cc
+> **Warning**
+> This project is still very early in development
+## Todo 
+- [x] File indexing
+- [x] YAML config reading
+- [ ] Building schema based on config
+- [ ] Organize file as set in schema
+- [ ] File Searching
+## Plan to do after finish
+- [ ] Schema changing tool
