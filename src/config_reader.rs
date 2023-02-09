@@ -8,7 +8,7 @@ use serde::{Deserializer, Serializer};
 use serde_yaml::Value;
 
 /// A struct to hold comma serated string or vec<string> values
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct CommaSeperated(Vec<String>);
 
 impl<'de> Deserialize<'de> for CommaSeperated {
@@ -54,7 +54,7 @@ impl<'de> de::Visitor<'de> for CommaSeperatedVisitor {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 enum ConfigDatatype {
     Tags(Vec<String>),
@@ -103,7 +103,7 @@ impl<'de> Visitor<'de> for SchemaConfigVisitor {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 struct SchemaConfigItem {
     #[serde(default)]
     fields: CommaSeperated,
@@ -122,7 +122,7 @@ struct SchemaConfigItem {
 
 #[derive(Debug, Default)]
 struct ImportConfig {
-    list: Vec<(String, String)>,
+    list: Vec<(String, CommaSeperated)>,
 }
 
 impl<'de> Deserialize<'de> for ImportConfig {
@@ -130,47 +130,46 @@ impl<'de> Deserialize<'de> for ImportConfig {
     where
         D: Deserializer<'de>,
     {
-        let values: Vec<Value> = <Vec<Value>>::deserialize(deserializer)?;
-        let mut list = Vec::new();
-        dbg!(&values);
-        for i in values {
-            match i {
-                Value::String(s) => {
-                    list.append(&mut vec![(s, "".to_string())]);
-                    // println!("str-{:?}", s)
-                }
-                Value::Mapping(m) => {
-                    let data = m.iter().next().unwrap();
-                    list.append(&mut vec![(
-                        data.0.as_str().unwrap_or("").to_owned(),
-                        data.1.as_str().unwrap_or("").to_owned(),
-                    )]);
-                    // list.append(other)
-                    println!("map-{:?}", m)
-                }
-                Value::Sequence(s) => {
-                    let mut iter = s.iter();
-                    let key = iter.next().unwrap();
-                    let data = iter.next().unwrap();
+        struct ImportConfigVisitor;
+        impl<'de> Visitor<'de> for ImportConfigVisitor {
+            type Value = ImportConfig;
 
-                    list.append(&mut vec![(
-                        key.as_str().unwrap().to_owned(),
-                        data.as_str().unwrap().to_owned(),
-                    )]);
-                }
-                _ => return Err(de::Error::custom("Invalid type")),
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a sequence or a comma separated list of strings")
             }
-            // println!("test-{:?}", i);
-        }
-        // let mut list = Vec::new();
-        // for value in values.iter() {
-        //     if (value.)
-        // }
-        // for value in values.iter() {
-        //     println!("{:?}", value);
-        // }
 
-        Ok(ImportConfig { list })
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut values = Vec::new();
+
+                while let Some(value) = seq.next_element()? {
+                    // values.push(value);
+                }
+
+                Ok(ImportConfig { list: values })
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(ImportConfig {
+                    list: vec![(v, CommaSeperated::default())],
+                })
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut values = Vec::new();
+                while let Some((key, value)) = map.next_entry()? {
+                    values.push((key, value));
+                }
+                Ok(ImportConfig { list: values })
+            }
+        }
+
+        deserializer.deserialize_any(ImportConfigVisitor)
     }
 }
 
@@ -181,14 +180,16 @@ impl<'se> Serialize for ImportConfig {
     {
         let mut seq = serializer.serialize_seq(Some(self.list.len()))?;
         for (key, value) in self.list.iter() {
-            if (value.eq("")) {
+            if value.0.is_empty() {
                 seq.serialize_element(&key)?;
                 continue;
             } else {
+                let v = value.0.join(",");
                 let map = Value::Mapping(
                     vec![(
                         Value::String(key.to_string()),
-                        Value::String(value.to_string()),
+                        Value::String(v.to_string())
+                        // Value::String(value.to_string()),
                     )]
                     .into_iter()
                     .collect(),
@@ -209,6 +210,12 @@ impl<'se> Serialize for ImportConfig {
     }
 }
 
+/// meta config
+/// ``` yaml
+/// _meta:
+///     schema: "schema"
+///     ignore_schema: true
+///     ... schema config
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct MetaConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -238,6 +245,51 @@ struct Config {
     meta: MetaConfig,
     #[serde(flatten)]
     uncategorized: Value,
+}
+
+impl Config {
+    pub fn combine_config(&mut self, other: &Config, replace: bool) {
+        // combine schema
+        // let sc = self.schema.items;
+        for i in other.schema.items.iter() {
+            if replace {
+                self.schema.items.insert(i.0.to_string(), i.1.clone());
+            } else {
+                self.schema
+                    .items
+                    .entry(i.0.to_string())
+                    .or_insert(i.1.clone());
+            }
+        }
+
+        // combine data
+        for i in other.data.iter() {
+            if replace {
+                self.data.insert(i.0.to_string(), i.1.clone());
+            } else {
+                self.data.entry(i.0.to_string()).or_insert(i.1.clone());
+            }
+        }
+
+        // combine tags
+        for i in other.tags.iter() {
+            if replace {
+                self.tags.insert(i.0.to_string(), i.1.clone());
+            } else {
+                self.tags.entry(i.0.to_string()).or_insert(i.1.clone());
+            }
+        }
+
+        // combine import
+        // will deal with String later
+        for i in other.import.list.iter() {
+            self.import.list.push(i.clone());
+        }
+
+        // combine meta
+        // fuck it will do later
+
+    }
 }
 
 #[test]

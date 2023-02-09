@@ -20,7 +20,6 @@ pub struct ChildItem {
     pub id: i32,
     pub path: String,
     pub last_modified: DateTime<Utc>,
-    pub md5: Option<String>,
     pub is_folder: bool,
 }
 
@@ -239,8 +238,6 @@ impl IndexDB {
                         id: row.get::<i32, &str>("id"),
                         path: row.get::<String, &str>("path"),
                         last_modified: row.get::<DateTime<Utc>, &str>("last_mod"),
-                        md5: (!row.get::<String, &str>("md5").eq(""))
-                            .then(|| row.get::<String, &str>("md5")),
                         is_folder: row.get::<bool, &str>("is_folder"),
                     },
                 )
