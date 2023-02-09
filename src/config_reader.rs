@@ -132,44 +132,53 @@ impl<'de> Deserialize<'de> for ImportConfig {
     {
         struct ImportConfigVisitor;
         impl<'de> Visitor<'de> for ImportConfigVisitor {
-            type Value = ImportConfig;
+            type Value = (String, CommaSeperated);
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a sequence or a comma separated list of strings")
+                formatter.write_str("a map")
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut key = String::new();
+                let mut value = CommaSeperated(Vec::new());
+                while let Some(k) = map.next_key::<String>()? {
+                    key = k;
+                    value = map.next_value::<CommaSeperated>()?;
+                }
+                Ok((key, value))
             }
 
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut values = Vec::new();
-
-                while let Some(value) = seq.next_element()? {
-                    // values.push(value);
+                let mut key = String::new();
+                let mut value = Vec::new();
+                if let Some(k) = seq.next_element::<String>()? {
+                    key = k;
                 }
-
-                Ok(ImportConfig { list: values })
+                while let Some(v) = seq.next_element::<String>()? {
+                    value.push(v);
+                }
+                Ok((key, CommaSeperated(value)))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Ok(ImportConfig {
-                    list: vec![(v, CommaSeperated::default())],
-                })
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::MapAccess<'de>,
-            {
-                let mut values = Vec::new();
-                while let Some((key, value)) = map.next_entry()? {
-                    values.push((key, value));
-                }
-                Ok(ImportConfig { list: values })
+                Ok((v, CommaSeperated(Vec::new())))
             }
         }
 
-        deserializer.deserialize_any(ImportConfigVisitor)
+        let value_list = Vec::<Value>::deserialize(deserializer)?;
+        let mut list = Vec::new();
+        for value in value_list {
+            match value.deserialize_any(ImportConfigVisitor) {
+                Ok(e) => list.push(e),
+                Err(e) => {
+                    println!("something went wrong with config, skipped | error: {}", e);
+                }
+            }
+        }
+        Ok(ImportConfig { list })
     }
 }
 
@@ -188,8 +197,7 @@ impl<'se> Serialize for ImportConfig {
                 let map = Value::Mapping(
                     vec![(
                         Value::String(key.to_string()),
-                        Value::String(v.to_string())
-                        // Value::String(value.to_string()),
+                        Value::String(v.to_string()), // Value::String(value.to_string()),
                     )]
                     .into_iter()
                     .collect(),
@@ -288,7 +296,6 @@ impl Config {
 
         // combine meta
         // fuck it will do later
-
     }
 }
 
@@ -313,7 +320,8 @@ fn test_yaml() {
             filename: tags, list
         _import:
             - "{?}.{ext:?w}": data
-            - "{?}.{lala:?}":
+            - "{?}.{lala:?}"
+            - ["{?}-{?}.{?}", a, b, c]
         other data: a
         "#,
     )
