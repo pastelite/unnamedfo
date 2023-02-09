@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use serde_yaml::Value;
 
+use crate::schema::{Schema, SchemaList};
+
 /// A struct to hold comma serated string or vec<string> values
 #[derive(Debug, Default, Clone)]
-struct CommaSeperated(Vec<String>);
+pub struct CommaSeperated(pub Vec<String>);
 
 impl<'de> Deserialize<'de> for CommaSeperated {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -72,8 +74,8 @@ enum ConfigDatatype {
 ///         filename: "{id}-{name}.yaml"
 /// ```
 #[derive(Debug, Serialize, Default)]
-struct SchemaConfig {
-    items: HashMap<String, SchemaConfigItem>,
+pub struct SchemaConfig {
+    pub items: HashMap<String, SchemaConfigItem>,
 }
 
 impl<'de> Deserialize<'de> for SchemaConfig {
@@ -104,13 +106,13 @@ impl<'de> Visitor<'de> for SchemaConfigVisitor {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
-struct SchemaConfigItem {
+pub struct SchemaConfigItem {
     #[serde(default)]
-    fields: CommaSeperated,
+    pub fields: CommaSeperated,
     #[serde(default)]
-    children: CommaSeperated,
+    pub children: CommaSeperated,
     #[serde(skip_serializing_if = "Option::is_none")]
-    filename: Option<String>,
+    pub filename: Option<String>,
 }
 
 /// example in yaml, to be change to comma seperated
@@ -235,7 +237,7 @@ struct MetaConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Config {
+pub struct Config {
     #[serde(rename = "_schema")]
     #[serde(default)]
     schema: SchemaConfig,
@@ -256,11 +258,11 @@ struct Config {
 }
 
 impl Config {
-    pub fn combine_config(&mut self, other: &Config, replace: bool) {
+    pub fn combine_config(&mut self, other: &Config, higher_priority: bool) {
         // combine schema
         // let sc = self.schema.items;
         for i in other.schema.items.iter() {
-            if replace {
+            if higher_priority {
                 self.schema.items.insert(i.0.to_string(), i.1.clone());
             } else {
                 self.schema
@@ -272,7 +274,7 @@ impl Config {
 
         // combine data
         for i in other.data.iter() {
-            if replace {
+            if higher_priority {
                 self.data.insert(i.0.to_string(), i.1.clone());
             } else {
                 self.data.entry(i.0.to_string()).or_insert(i.1.clone());
@@ -281,7 +283,7 @@ impl Config {
 
         // combine tags
         for i in other.tags.iter() {
-            if replace {
+            if higher_priority {
                 self.tags.insert(i.0.to_string(), i.1.clone());
             } else {
                 self.tags.entry(i.0.to_string()).or_insert(i.1.clone());
@@ -289,14 +291,69 @@ impl Config {
         }
 
         // combine import
-        // will deal with String later
         for i in other.import.list.iter() {
-            self.import.list.push(i.clone());
+            if higher_priority {
+                self.import.list.insert(0, i.clone());
+                continue;
+            } else {
+                self.import.list.push(i.clone());
+            }
         }
 
         // combine meta
+        // TODO: combine meta
         // fuck it will do later
     }
+}
+
+#[test]
+fn test_combine() {
+    let mut config1: Config = serde_yaml::from_str(
+        r#"
+        _meta:
+            type: Anime
+        _schema:
+            Anime:
+                fields: anime_name!, tags(tags), startDate, episodeNum
+                children: TaggedVideo
+                filename: "{a}-{b}.{ext}"
+        _data:
+            anime_name: a, b, c
+            test1: other
+        _tags:
+            filename: tags, list
+        _import:
+            - "format1-1": data
+            - "format1-2"
+    "#,
+    )
+    .unwrap();
+
+    let config2: Config = serde_yaml::from_str(
+        r#"
+        _meta:
+            type: Anime
+        _schema:
+            Anime:
+                fields: anime_name2!, tags2(tags), startDate2, episodeNum2
+                children: TaggedVideo
+                filename: "{a}-{b}.{ext}"
+        _data:
+            anime_name: a2, b2, c2
+            test2: other
+        _tags:
+            filename: tags2, list2
+        _import:
+            - "format2-1"
+            - "format2-2"
+    "#,
+    )
+    .unwrap();
+
+    dbg!(&config1, &config2);
+
+    config1.combine_config(&config2, true);
+    dbg!(&config1);
 }
 
 #[test]
@@ -327,15 +384,10 @@ fn test_yaml() {
     )
     .unwrap();
 
-    let mut data = HashMap::<String, ConfigDatatype>::new();
-    // data.insert(
-    //     "test".to_owned(),
-    //     ConfigDatatype::Tags(CommaSeperated::new("a,b,c")),
-    // );
-    // data.insert("number-test".to_owned(), ConfigDatatype::Number(32f64));
-    let yaml = serde_yaml::to_string(&data).unwrap();
+    // test to schema
+    let schema = SchemaList::from(&config.schema);
 
     let reserialize = serde_yaml::to_string(&config).unwrap();
-    dbg!(config, yaml);
+    dbg!(config, schema);
     println!("{}", reserialize);
 }
