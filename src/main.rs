@@ -5,11 +5,11 @@ use db::IndexDB;
 
 mod config_reader;
 mod db;
+mod format;
 mod helper;
 mod indexer;
 mod schema;
 mod search;
-
 use indexer::Indexer;
 
 #[derive(Parser, Debug)]
