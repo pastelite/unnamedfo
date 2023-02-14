@@ -4,7 +4,7 @@
 // {var:?}otherdata.{var:?}
 // ? = any, ?w = /w, ?d = /d, ... (only 1 char)
 
-use crate::parser::format::any;
+use crate::{error::FOError, parser::format::any};
 use std::{iter::Peekable, str::Chars};
 
 use regex::Regex;
@@ -88,10 +88,11 @@ struct PatternString {
 }
 
 impl PatternString {
-    fn parse(pattern: &str, vars: Vec<Option<String>>) -> Option<PatternString> {
+    fn parse(pattern: &str, vars: Vec<Option<String>>) -> Result<PatternString, FOError> {
         // let mut vars = Vec::new();
         let mut i = 0;
-        let (_, (varlist, regex_pattern)) = any(pattern).ok()?;
+        let (_, (varlist, regex_pattern)) =
+            any(pattern).map_err(|e| FOError::PatternError(e.to_string()))?;
         let regex = Regex::new(&regex_pattern).unwrap();
         let varlist = varlist
             .into_iter()
@@ -108,7 +109,7 @@ impl PatternString {
                 }
             })
             .collect();
-        Some(PatternString {
+        Ok(PatternString {
             regex,
             vars: varlist,
         })
@@ -132,7 +133,7 @@ fn test_formatstring() {
 
 #[test]
 fn test_parser() {
-    let input = ("{?}.{mp3|mp4}", vec![Some("var".to_string()), None]);
+    let input = ("{?/{}.{mp3|mp4}", vec![Some("var".to_string()), None]);
     let pattern = PatternString::parse(input.0, input.1).unwrap();
     dbg!(pattern);
     // println!("{:?}", pattern);

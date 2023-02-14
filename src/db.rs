@@ -263,6 +263,16 @@ impl IndexDB {
             .await
             .unwrap();
     }
+
+    // pub async fn get_schemas(&self) -> Result<Vec<Schema>> {
+    //     let data = query("SELECT * FROM schema")
+    //         .fetch_all(&self.pool)
+    //         .await?
+    //         .iter()
+    //         .map(|row| Schema ::from_format(row.get::<String, &str>("format")))
+    //         .collect();
+    //     Ok(data)
+    // }
 }
 
 #[async_std::test]

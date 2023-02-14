@@ -12,15 +12,20 @@ use chrono::{DateTime, Utc};
 use crate::{
     db::IndexDB,
     helper::{FileHelper, PathHelper},
+    schema::SchemaList,
 };
 
 pub struct Indexer<'a> {
     db: &'a mut IndexDB,
+    // schema: SchemaList,
 }
 
 impl<'a> Indexer<'a> {
     pub fn open(db: &'a mut IndexDB) -> Self {
-        Self { db: db }
+        Self {
+            db,
+            // schema: SchemaList::new(),
+        }
     }
 
     /// path please start as ./ the working directory is already saved in db
@@ -81,6 +86,11 @@ impl<'a> Indexer<'a> {
                         self.indexing(&item_cut_path, dir_id).await?;
                     } else {
                         self.db.add_file(&item_cut_path, parent_index).await?;
+                        // config related
+                        // let config = file_helper.read_config()?;
+                        // for schema in config.schema.items {
+                        //     // self.schema.add(schema);
+                        // }
                     }
                 }
             }

@@ -12,6 +12,8 @@ mod parser;
 mod schema;
 mod search;
 use indexer::Indexer;
+mod error;
+mod mover;
 
 #[derive(Parser, Debug)]
 struct CliArgs {

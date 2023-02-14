@@ -7,6 +7,11 @@ use std::{
 
 use chrono::{DateTime, Utc};
 
+use crate::{
+    config_reader::{Config, SchemaConfig},
+    error::FOError,
+};
+
 pub fn cut_path<P: AsRef<Path>, Q: AsRef<Path>>(full: P, cut: Q) -> PathBuf {
     let cut_path = PathBuf::from(cut.as_ref());
     let full_path = PathBuf::from(full.as_ref());
@@ -105,6 +110,53 @@ impl FileHelper {
             _ => None,
         }
     }
+
+    pub fn read_config(&self) -> Result<Config, FOError> {
+        let mut config: Config = Default::default();
+
+        // yaml outside
+        read_file_to_combine_config(&mut config, &self.path.with_extension("yaml"), |yaml| {
+            serde_yaml::from_str::<Config>(yaml).map_err(|e| e.into())
+        })?;
+        read_file_to_combine_config(
+            &mut config,
+            &self.path.with_extension("schema.yaml"),
+            |yaml| {
+                let schema = serde_yaml::from_str::<SchemaConfig>(yaml)?;
+                Ok(Config {
+                    schema,
+                    ..Default::default()
+                })
+            },
+        )?;
+
+        read_file_to_combine_config(&mut config, &self.path.join("_data.yaml"), |yaml| {
+            serde_yaml::from_str::<Config>(yaml).map_err(|e| e.into())
+        })?;
+
+        Ok(config)
+    }
+}
+
+fn read_file_to_combine_config<F>(
+    config: &mut Config,
+    path: &Path,
+    config_dealer: F,
+) -> Result<(), FOError>
+where
+    F: FnOnce(&str) -> Result<Config, FOError>,
+{
+    let yaml = fs::read_to_string(path);
+    match yaml {
+        Ok(yaml) => {
+            let config_new = config_dealer(&yaml)?;
+            config.combine_config(&config_new, false);
+        }
+        Err(e) if !matches!(e.kind(), std::io::ErrorKind::NotFound) => return Err(e.into()),
+        _ => {}
+    }
+    // let config: Config = serde_yaml::from_str(&yaml)?;
+    Ok(())
 }
 
 #[test]
@@ -125,4 +177,14 @@ fn test_cutter() {
         PathBuf::from("./testdir/data1")
     );
     dbg!(PathBuf::from("C:/document/s\\data1").format());
+}
+
+#[test]
+fn test_read_config() {
+    let file_helper = FileHelper::new("./testdir/test2");
+    let config = file_helper.read_config().unwrap();
+    dbg!(config);
+    let file_helper = FileHelper::new("./testdir/test.txt");
+    let config = file_helper.read_config().unwrap();
+    dbg!(config);
 }

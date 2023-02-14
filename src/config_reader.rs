@@ -58,7 +58,7 @@ impl<'de> de::Visitor<'de> for CommaSeperatedVisitor {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
-enum ConfigDatatype {
+pub enum ConfigDatatype {
     Tags(Vec<String>),
     String(String),
     Integer(i32),
@@ -123,7 +123,7 @@ pub struct SchemaConfigItem {
 ///    - ["{?}.{?w}","pat1,pat2"]
 
 #[derive(Debug, Default)]
-struct ImportConfig {
+pub struct ImportConfig {
     list: Vec<(String, CommaSeperated)>,
 }
 
@@ -226,8 +226,8 @@ impl<'se> Serialize for ImportConfig {
 ///     schema: "schema"
 ///     ignore_schema: true
 ///     ... schema config
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct MetaConfig {
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct MetaConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     schema: Option<String>,
     #[serde(default)]
@@ -236,25 +236,42 @@ struct MetaConfig {
     other: SchemaConfigItem,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl MetaConfig {
+    fn combine(&mut self, other: &MetaConfig) {
+        if self.schema.is_none() {
+            self.schema = other.schema.clone();
+        }
+        // if !other.ignore_schema {
+        //     self.ignore_schema = other.ignore_schema;
+        // }
+        self.other.fields.0.extend(other.other.fields.0.clone());
+        self.other.children.0.extend(other.other.children.0.clone());
+        // self.other.children.combine(&other.other.children);
+        if self.other.filename.is_none() {
+            self.other.filename = other.other.filename.clone();
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(rename = "_schema")]
     #[serde(default)]
-    schema: SchemaConfig,
+    pub schema: SchemaConfig,
     #[serde(rename = "_data")]
     #[serde(default)]
-    data: HashMap<String, ConfigDatatype>,
+    pub data: HashMap<String, ConfigDatatype>,
     #[serde(rename = "_tags")]
     #[serde(default)]
-    tags: HashMap<String, CommaSeperated>,
+    pub tags: HashMap<String, CommaSeperated>,
     #[serde(rename = "_import")]
     #[serde(default)]
-    import: ImportConfig,
+    pub import: ImportConfig,
     #[serde(rename = "_meta")]
     #[serde(default)]
-    meta: MetaConfig,
+    pub meta: MetaConfig,
     #[serde(flatten)]
-    uncategorized: Value,
+    pub uncategorized: Value,
 }
 
 impl Config {
@@ -302,6 +319,16 @@ impl Config {
 
         // combine meta
         // TODO: combine meta
+        if higher_priority {
+            let mut other_meta = other.meta.clone();
+            other_meta.combine(&self.meta);
+        } else {
+            self.meta.combine(&other.meta);
+        }
+
+        // if higher_priority {
+        //     self.meta = other.meta.clone();
+        // }
         // fuck it will do later
     }
 }
@@ -390,4 +417,25 @@ fn test_yaml() {
     let reserialize = serde_yaml::to_string(&config).unwrap();
     dbg!(config, schema);
     println!("{}", reserialize);
+}
+
+#[test]
+fn test_meta() {
+    let config: Config = serde_yaml::from_str(
+        r#"
+        _meta:
+            schema: "schema"
+            ignore_schema: true
+        "#,
+    )
+    .unwrap();
+
+    dbg!(config);
+
+    // test to schema
+    // let schema = SchemaList::from(&config.schema);
+
+    // let reserialize = serde_yaml::to_string(&config).unwrap();
+    // dbg!(config, schema);
+    // println!("{}", reserialize);
 }
