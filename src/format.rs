@@ -82,25 +82,41 @@ impl ToString for ParseResult {
 
 #[derive(Debug)]
 struct ParserHelper<'a> {
-    iter: Peekable<Chars<'a>>,
+    iter: Chars<'a>,
+    // iter: Peekable<Chars<'a>>,
     children: Vec<Option<String>>,
+    index: i32,
 }
 
 impl<'a> ParserHelper<'a> {
     fn new(input: &str) -> ParserHelper {
         // let types = Box::new(input.chars().peekable());
+        // let types = input.chars();
         ParserHelper {
-            iter: input.chars().peekable(),
+            iter: input.chars(),
             children: Vec::new(),
+            index: -1,
         }
     }
 
     fn peek(&mut self) -> Option<char> {
-        self.iter.peek().cloned()
+        dbg!(
+            "peek",
+            &((self.index + 1) as usize),
+            &self.iter.nth((self.index + 1) as usize).clone()
+        );
+        self.iter.nth((self.index + 1) as usize).clone()
+        // self.iter.peek().cloned()
     }
 
     fn next(&mut self) -> Option<char> {
-        self.iter.next()
+        self.index += 1;
+        dbg!(
+            "next",
+            &self.index,
+            &self.iter.nth(self.index as usize).clone()
+        );
+        self.iter.nth(self.index as usize).clone()
     }
 
     fn add_var(&mut self, var: Option<String>, count: usize) {
@@ -119,6 +135,7 @@ fn parser_var(input: &mut ParserHelper) -> Option<ParseResult> {
     let ignore_list = ['{', '}', ':', ' ', '?'];
     let mut ticker = false;
     while let Some(a) = input.peek() {
+        dbg!(a);
         if a.eq(&'\\') {
             ticker = true;
             input.next();
@@ -279,7 +296,7 @@ fn test_formatstring() {
 
 #[test]
 fn test_parser() {
-    let text = "{wewewewew}";
+    let text = "{abc}";
     let mut parser = ParserHelper::new(text);
-    dbg!(parser_any(&mut parser), parser);
+    dbg!(parser_capture(&mut parser), parser);
 }

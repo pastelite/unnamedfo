@@ -8,6 +8,7 @@ mod db;
 mod format;
 mod helper;
 mod indexer;
+mod parser;
 mod schema;
 mod search;
 use indexer::Indexer;
