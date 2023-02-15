@@ -124,7 +124,7 @@ pub struct SchemaConfigItem {
 
 #[derive(Debug, Default)]
 pub struct ImportConfig {
-    list: Vec<(String, CommaSeperated)>,
+    pub list: Vec<(String, CommaSeperated)>,
 }
 
 impl<'de> Deserialize<'de> for ImportConfig {
@@ -229,11 +229,11 @@ impl<'se> Serialize for ImportConfig {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct MetaConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    schema: Option<String>,
+    pub schema: Option<String>,
     #[serde(default)]
-    ignore_schema: bool,
+    pub ignore_schema: bool,
     #[serde(flatten)]
-    other: SchemaConfigItem,
+    pub other: SchemaConfigItem,
 }
 
 impl MetaConfig {

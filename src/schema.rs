@@ -4,18 +4,19 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
+    mem::replace,
     rc::Rc,
     sync::Arc,
 };
 
 use regex::{Captures, Regex};
 
-use crate::config_reader::{SchemaConfig, SchemaConfigItem};
+use crate::config_reader::{CommaSeperated, ConfigDatatype, SchemaConfig, SchemaConfigItem};
 
 #[derive(Clone, Debug)]
 pub struct Schema {
     pub name: String,
-    pub fields: Vec<Field>,
+    pub fields: HashMap<String, Field>,
     pub children: Vec<String>,
     pub filename: Option<String>,
 }
@@ -27,7 +28,7 @@ impl Schema {
             &self
                 .fields
                 .iter()
-                .map(|field| field.to_format())
+                .map(|field| field.1.to_format())
                 .collect::<Vec<String>>()
                 .join(" "),
         );
@@ -49,7 +50,7 @@ impl Schema {
 #[derive(Debug, Clone)]
 pub struct Field {
     name: String,
-    format: FieldFormat,
+    format: ConfigDatatype,
     forced: bool,
 }
 
@@ -57,7 +58,7 @@ impl Field {
     pub fn to_format(&self) -> String {
         let mut string = String::from(&self.name);
         match self.format {
-            FieldFormat::String => (),
+            ConfigDatatype::String(_) => (),
             _ => string.push_str(&format!("({})", self.format.to_string())),
         }
         if self.forced {
@@ -68,15 +69,39 @@ impl Field {
 
     pub fn from_format(format: &str) -> Option<Self> {
         let re = Regex::new(r"^(\w+)(?:\((\w+)\))?(!)?$").unwrap();
-        let captures = re.captures(format).unwrap();
+        let captures = re.captures(format)?;
         Some(Self {
             name: captures.get(1)?.as_str().to_string(),
-            format: FieldFormat::parse(match captures.get(2) {
+            format: ConfigDatatype::parse(match captures.get(2) {
                 Some(d) => d.as_str(),
                 None => "str",
             }),
             forced: captures.get(3).is_some(),
         })
+    }
+
+    pub fn is_fit(&self, field: &String, data: &String) -> bool {
+        match (&self.format, data) {
+            (&ConfigDatatype::String(_), _) => (),
+            (&ConfigDatatype::Integer(_), s) => {
+                if s.parse::<i32>().is_err() {
+                    return false;
+                }
+            }
+            (&ConfigDatatype::Float(_), s) => {
+                if s.parse::<f32>().is_err() {
+                    return false;
+                }
+            }
+            (&ConfigDatatype::Tags(_), s) => {
+                let b = serde_yaml::from_str::<CommaSeperated>(s);
+                if b.is_err() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+        self.name.eq(field)
     }
 }
 
@@ -99,35 +124,55 @@ impl Schema {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            fields: Vec::new(),
+            fields: HashMap::new(),
             children: Vec::new(),
             filename: None,
         }
     }
+
+    pub fn is_fit(&self, data: &Vec<(String, String)>) -> bool {
+        let data_map = data.iter().map(|d| (&d.0, &d.1)).collect::<HashMap<_, _>>();
+        for (field_name, field_type) in &self.fields {
+            // if data_map.get(field_name).is_none() && !field_type.forced {
+            //     return false;
+            // }
+            match data_map.get(field_name) {
+                None if field_type.forced => return false,
+                None => continue,
+                Some(d) if !field_type.is_fit(field_name, d) => {
+                    return false;
+                }
+                _ => continue,
+            }
+        }
+        true
+    }
 }
 
-#[derive(Debug, Clone)]
-pub enum FieldFormat {
-    String,
-    Number,
-    StringArray,
-}
+// #[derive(Debug, Clone)]
+// pub enum FieldFormat {
+//     String,
+//     Number,
+//     StringArray,
+// }
 
-impl FieldFormat {
+impl ConfigDatatype {
     pub fn parse(format: &str) -> Self {
         match format {
-            "num" => Self::Number,
-            "str" => Self::String,
-            "str[]" => Self::StringArray,
-            _ => Self::String,
+            "num" => Self::Integer(0),
+            "flo" => Self::Float(0.),
+            "str" => Self::String("".to_owned()),
+            "str[]" => Self::Tags(Vec::new()),
+            _ => Self::String("".to_owned()),
         }
     }
 
     pub fn to_string(&self) -> String {
         match self {
-            Self::Number => "num",
-            Self::String => "str",
-            Self::StringArray => "str[]",
+            Self::Integer(_) => "num",
+            Self::Float(_) => "flo",
+            Self::String(_) => "str",
+            Self::Tags(_) => "str[]",
         }
         .to_string()
     }
@@ -135,7 +180,7 @@ impl FieldFormat {
 
 #[derive(Debug)]
 pub struct SchemaList {
-    pub list: HashMap<String, Rc<RefCell<Schema>>>,
+    pub list: HashMap<String, Schema>,
 }
 
 impl SchemaList {
@@ -155,11 +200,12 @@ impl SchemaList {
         let re = Regex::new(r"^(\w+)(?:\((\w+)\))?(!)?$").unwrap();
 
         // parse Fields
-        let fields: Vec<Field> = format
+        let fields: HashMap<String, Field> = format
             .next()?
             .split(" ")
             .filter_map(|f| {
-                Some(Field::from_format(f)?)
+                let field = Field::from_format(f)?;
+                Some((field.name.clone(), field))
                 // let captures = re.captures(f)?;
                 // Some(Field {
                 //     name: captures.get(1)?.as_str().to_string(),
@@ -206,9 +252,11 @@ impl SchemaList {
         self.list
             .entry(name.clone())
             .and_modify(|f| {
-                f.borrow_mut().replace(schema.clone());
+                let _ = replace(f, schema.clone());
+                // f = schema.clone();
+                // f.borrow_mut() .replace(schema.clone());
             })
-            .or_insert(Rc::new(RefCell::new(schema)));
+            .or_insert(schema);
         Some(())
     }
 
@@ -217,8 +265,11 @@ impl SchemaList {
             .fields
             .0
             .iter()
-            .filter_map(|f| Some(Field::from_format(f)?))
-            .collect::<Vec<Field>>();
+            .filter_map(|f| {
+                let field = Field::from_format(f)?;
+                Some((field.name.clone(), field))
+            })
+            .collect::<HashMap<String, Field>>();
 
         let children = config
             .children
@@ -228,7 +279,7 @@ impl SchemaList {
                 if !self.list.contains_key(c) {
                     self.insert_empty(c.clone());
                 }
-                name.clone()
+                c.clone()
             })
             .collect::<Vec<String>>();
 
@@ -244,21 +295,33 @@ impl SchemaList {
         self.list
             .entry(name)
             .and_modify(|f| {
-                f.borrow_mut().replace(schema.clone());
+                let _ = replace(f, schema.clone());
+                // f = &mut schema.clone();
+                // f.borrow_mut().replace(schema.clone());
             })
-            .or_insert(Rc::new(RefCell::new(schema)));
+            .or_insert(schema);
 
         Some(())
     }
 
     fn insert_empty(&mut self, name: String) {
-        self.list
-            .insert(name.clone(), Rc::new(RefCell::new(Schema::new(name))));
+        self.list.insert(name.clone(), Schema::new(name));
     }
 
-    fn insert(&mut self, schema: Rc<RefCell<Schema>>) {
-        self.list
-            .insert(schema.borrow().name.to_owned(), schema.clone());
+    fn insert(&mut self, schema: Schema) {
+        self.list.insert(schema.name.to_owned(), schema.clone());
+    }
+
+    /// None if name is not exists
+    pub fn get_children(&self, name: &str) -> Option<Vec<&Schema>> {
+        let ty = self
+            .list
+            .get(name)?
+            .children
+            .iter()
+            .flat_map(|f| Some(self.list.get(f)?))
+            .collect::<Vec<&Schema>>();
+        Some(ty)
     }
 }
 
@@ -281,22 +344,45 @@ fn test_parse() {
     );
     sl.parse_format("custom".to_owned(), "field1 field2! field3(num) | any |");
     sl.parse_format("child1".to_owned(), "testf| |");
-    // sl.parse_format("child2".to_owned(), "fs(num)!| |");
+    sl.parse_format("child2".to_owned(), "fs(num)!| |");
     dbg!(&sl.list);
-    sl.list.iter().for_each(|(_, rc)| {
-        dbg!(rc.borrow().to_format());
-    })
+    // sl.list.iter().for_each(|(_, rc)| {
+    //     dbg!(rc.to_format());
+    // })
 }
 
-enum FormatTree {
-    Folder {
-        schema: Rc<Schema>,
-        fields: HashMap<String, String>,
-        children: Box<FormatTree>,
-    },
-    File {
-        filename: String,
-        fields: HashMap<String, String>,
-        current_path: String,
-    },
+macro_rules! S {
+    ($($var:expr),*) => {
+        ($(stringify!($var).to_owned() ),*)
+    };
+}
+
+// macro_rules! vecString {
+
+// }
+
+#[test]
+fn fit_test() {
+    let mut sl = SchemaList::new();
+    sl.parse_format("test1".to_owned(), "a(num) b c | |");
+    sl.parse_format("test2".to_owned(), "a b(num) c! | test1 |");
+
+    let test1 = sl.list.get("test1").unwrap();
+    let test2 = sl.list.get("test2").unwrap();
+
+    let data_test1 = vec![S!(a, 2), S!(b, test)];
+    let data_test2 = vec![S!(a, s), S!(b, 2), S!(c, a)];
+    let data_test2_no_c = vec![S!(a, s), S!(b, 2)];
+
+    assert_eq!(true, test1.is_fit(&data_test1));
+    assert_eq!(false, test2.is_fit(&data_test1));
+    assert_eq!(false, test1.is_fit(&data_test2));
+    assert_eq!(true, test2.is_fit(&data_test2));
+    assert_eq!(false, test1.is_fit(&data_test2_no_c));
+    assert_eq!(false, test2.is_fit(&data_test2_no_c));
+}
+
+#[test]
+fn macro_test() {
+    dbg!(S!("test", "lala", "fa"));
 }

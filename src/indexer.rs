@@ -17,14 +17,14 @@ use crate::{
 
 pub struct Indexer<'a> {
     db: &'a mut IndexDB,
-    // schema: SchemaList,
+    schema: SchemaList,
 }
 
 impl<'a> Indexer<'a> {
     pub fn open(db: &'a mut IndexDB) -> Self {
         Self {
             db,
-            // schema: SchemaList::new(),
+            schema: SchemaList::new(),
         }
     }
 
@@ -87,10 +87,11 @@ impl<'a> Indexer<'a> {
                     } else {
                         self.db.add_file(&item_cut_path, parent_index).await?;
                         // config related
-                        // let config = file_helper.read_config()?;
-                        // for schema in config.schema.items {
-                        //     // self.schema.add(schema);
-                        // }
+                        let config = file_helper.read_config()?;
+                        for (name, schemaitem) in config.schema.items {
+                            self.schema.parse_config(name, &schemaitem);
+                            // self.schema.add(schema);
+                        }
                     }
                 }
             }
@@ -107,9 +108,16 @@ impl<'a> Indexer<'a> {
     }
 }
 
+/// Newer indexer. old one still works but I don't like it
+/// old one have no schema support, I try to fix that in the new one
+// pub async fn indexer_new(path: db, SchemaList) {
+
+// }
+
 #[async_std::test]
 async fn test_struct() {
     let mut db = IndexDB::open("./testdir").await.unwrap();
     let mut st = Indexer::open(&mut db);
     st.indexing("./", 0).await.unwrap();
+    dbg!(st.schema);
 }

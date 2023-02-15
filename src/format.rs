@@ -82,13 +82,13 @@ impl ToString for ParseResult {
 }
 
 #[derive(Debug)]
-struct PatternString {
+pub struct PatternString {
     regex: Regex,
     vars: Vec<Option<String>>,
 }
 
 impl PatternString {
-    fn parse(pattern: &str, vars: Vec<Option<String>>) -> Result<PatternString, FOError> {
+    pub fn parse(pattern: &str, vars: Vec<Option<String>>) -> Result<PatternString, FOError> {
         // let mut vars = Vec::new();
         let mut i = 0;
         let (_, (varlist, regex_pattern)) =
@@ -114,6 +114,20 @@ impl PatternString {
             vars: varlist,
         })
     }
+
+    pub fn get_data(&self, input: &str) -> Option<Vec<(String, String)>> {
+        let mut result = Vec::new();
+        let captures = self.regex.captures(input)?;
+        for (i, var) in self.vars.iter().enumerate() {
+            if var.is_some() {
+                result.push((
+                    var.as_ref().unwrap().to_string(),
+                    captures.get(i + 1).unwrap().as_str().to_string(),
+                ));
+            }
+        }
+        Some(result)
+    }
 }
 
 #[test]
@@ -133,8 +147,11 @@ fn test_formatstring() {
 
 #[test]
 fn test_parser() {
-    let input = ("{?/{}.{mp3|mp4}", vec![Some("var".to_string()), None]);
+    let input = (
+        "{?}.{mp3|mp4}",
+        vec![Some("var".to_string()), Some("ext".to_string())],
+    );
     let pattern = PatternString::parse(input.0, input.1).unwrap();
-    dbg!(pattern);
+    dbg!(pattern.get_data("test.mp5"));
     // println!("{:?}", pattern);
 }

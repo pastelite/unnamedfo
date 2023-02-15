@@ -12,4 +12,13 @@ pub enum FOError {
     IOError(#[from] std::io::Error),
     #[error("Regex error: {0}")]
     RegexError(#[from] regex::Error),
+    #[error("Schema error: {0}")]
+    SchemaError(String),
 }
+
+// #[derive(Debug)]
+// pub enum SchemaError {
+//     InvalidSchema(String),
+//     InvalidFilename(String),
+//     NotFound(String),
+// }
