@@ -86,8 +86,10 @@ fn schema_finder(
     schema_path: String,
 ) -> Option<MoveTree> {
     for schema in schemalist.get_children(&schemaname)? {
-        if schema.is_fit(&data) {
+        let related_data = prune_unrelated_data(data, &schema.name);
+        if schema.is_fit(&related_data) {
             // prune data
+            // TODO: dot support
             let mut data = data.clone();
             let a = schema.fields.keys().collect::<Vec<&String>>();
             let (data_pruned, data_rest) = data.into_iter().partition(|(k, _)| a.contains(&k));
@@ -117,6 +119,55 @@ fn schema_finder(
     })
 }
 
+fn match_text(full: &str, short: &str) -> bool {
+    let full = full.to_lowercase();
+    let short = short.to_lowercase();
+    let mut full = full.chars();
+    let mut short = short.chars();
+
+    loop {
+        match (&full.next(), &short.next()) {
+            (Some(f), Some(s)) if !f.eq(s) => return false,
+            (None, _) | (_, None) => break,
+            _ => continue,
+        }
+    }
+    true
+}
+
+#[test]
+fn test_text_match() {
+    dbg!(match_text("anime", "an"));
+    dbg!(match_text("Anime", "ani"));
+    dbg!(match_text("anime", "book"));
+    dbg!(match_text("an", "anime"));
+}
+
+fn prune_unrelated_data(data: &Vec<(String, String)>, schema_name: &str) -> Vec<(String, String)> {
+    let mut res = vec![];
+    for (field, data) in data {
+        if field.contains(".") {
+            let splited = field.split(".").nth(0).unwrap();
+            if match_text(schema_name, splited) {
+                res.push((field.split(".").nth(1).unwrap().to_owned(), data.to_owned()))
+            }
+        } else {
+            res.push((field.to_owned(), data.to_owned()))
+        }
+    }
+    res
+}
+
+#[test]
+fn test_prune() {
+    let data = vec![
+        ("anim.name".to_owned(), "Naruto".to_owned()),
+        ("epinum".to_owned(), "1".to_owned()),
+        ("book.name".to_owned(), "Harry Potter".to_owned()),
+    ];
+    dbg!(prune_unrelated_data(&data, "anime"));
+}
+
 macro_rules! S {
     ($($var:expr),*) => {
         ($(stringify!($var).to_owned() ),*)
@@ -140,7 +191,7 @@ fn finder_test() {
     schemalist.parse_format("Root".to_owned(), " | Anime Book | ");
 
     let anime_data = vec![
-        ("name".to_owned(), "Naruto".to_owned()),
+        ("book.name".to_owned(), "Naruto".to_owned()),
         ("epinum".to_owned(), "1".to_owned()),
         ("tags".to_owned(), "Anime".to_owned()),
     ];
