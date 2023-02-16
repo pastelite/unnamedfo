@@ -10,9 +10,9 @@ use std::{iter::Peekable, str::Chars};
 use regex::Regex;
 
 #[derive(Debug)]
-struct FormatString {
+pub struct FormatString {
     parts: Vec<StringPart>,
-    vars: Vec<String>,
+    pub vars: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -22,7 +22,7 @@ enum StringPart {
 }
 
 impl FormatString {
-    fn parse(format: &str) -> FormatString {
+    pub fn parse(format: &str) -> FormatString {
         let format = format.to_string();
         let mut vars = Vec::new();
         let parts: Vec<StringPart> = format
@@ -43,7 +43,7 @@ impl FormatString {
         FormatString { parts, vars }
     }
 
-    fn generate_string(&self, vars: &Vec<String>) -> String {
+    pub fn generate_string(&self, vars: &Vec<String>) -> String {
         let mut result = String::new();
         let mut var_index = 0;
         for part in &self.parts {
@@ -115,6 +115,7 @@ impl PatternString {
         })
     }
 
+    /// Result: (varname, capture)
     pub fn get_data(&self, input: &str) -> Option<Vec<(String, String)>> {
         let mut result = Vec::new();
         let captures = self.regex.captures(input)?;

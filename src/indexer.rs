@@ -89,7 +89,7 @@ impl<'a> Indexer<'a> {
                         // config related
                         let config = file_helper.read_config()?;
                         for (name, schemaitem) in config.schema.items {
-                            self.schema.parse_config(name, &schemaitem);
+                            self.schema.parse_config_item(name, &schemaitem);
                             // self.schema.add(schema);
                         }
                     }

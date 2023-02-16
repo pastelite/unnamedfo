@@ -11,7 +11,10 @@ use std::{
 
 use regex::{Captures, Regex};
 
-use crate::config_reader::{CommaSeperated, ConfigDatatype, SchemaConfig, SchemaConfigItem};
+use crate::{
+    config_reader::{CommaSeperated, ConfigDatatype, SchemaConfig, SchemaConfigItem},
+    format::FormatString,
+};
 
 #[derive(Clone, Debug)]
 pub struct Schema {
@@ -147,6 +150,22 @@ impl Schema {
         }
         true
     }
+
+    pub fn generate_string(&self, data: &Vec<(String, String)>) -> String {
+        let data_map = data.iter().map(|d| (&d.0, &d.1)).collect::<HashMap<_, _>>();
+
+        let filename_formatter = FormatString::parse(&self.filename.as_ref().unwrap());
+        let vars = filename_formatter
+            .vars
+            .iter()
+            .map(|var| match data_map.get(var) {
+                None => String::new(),
+                Some(d) => d.to_string(),
+            })
+            .collect::<Vec<String>>();
+        let string = filename_formatter.generate_string(&vars);
+        string
+    }
 }
 
 // #[derive(Debug, Clone)]
@@ -260,7 +279,7 @@ impl SchemaList {
         Some(())
     }
 
-    pub fn parse_config(&mut self, name: String, config: &SchemaConfigItem) -> Option<()> {
+    pub fn parse_config_item(&mut self, name: String, config: &SchemaConfigItem) -> Option<()> {
         let fields = config
             .fields
             .0
@@ -304,6 +323,8 @@ impl SchemaList {
         Some(())
     }
 
+    // pub fn parse_config(&mut self)
+
     fn insert_empty(&mut self, name: String) {
         self.list.insert(name.clone(), Schema::new(name));
     }
@@ -329,7 +350,7 @@ impl From<&SchemaConfig> for SchemaList {
     fn from(config: &SchemaConfig) -> Self {
         let mut sl = SchemaList::new();
         for (name, config) in config.items.iter() {
-            sl.parse_config(name.to_owned(), config);
+            sl.parse_config_item(name.to_owned(), config);
         }
         sl
     }
@@ -383,6 +404,15 @@ fn fit_test() {
 }
 
 #[test]
-fn macro_test() {
-    dbg!(S!("test", "lala", "fa"));
+fn generate_string_test() {
+    let mut sl = SchemaList::new();
+    sl.parse_format("test1".to_owned(), "a b c | | %a%.txt");
+    // sl.parse_format("test2".to_owned(), "a b(num) c! | test1 |");
+    let test = sl.list.get("test1").unwrap();
+    let data = vec![S!(a, 2), S!(b, test)];
+    dbg!(test.generate_string(&data));
+
+    // assert_eq!(test1.generate_string(&data_test1), "2 test");
+    // assert_eq!(test2.generate_string(&data_test2), "s 2 a");
+    // assert_eq!(test2.generate_string(&data_test2_no_c), "s 2");
 }
