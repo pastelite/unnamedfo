@@ -68,7 +68,7 @@ impl Move {
             );
             match matches {
                 Some(matches) => {
-                    let movetree = schema_finder(&schemalist, &schemaname, &matches);
+                    let movetree = schema_finder(&schemalist, &schemaname, &vec![], &matches);
                     dbg!(&movetree);
                     println!("move to {}", movetree.unwrap().to_path(&schemalist));
 
@@ -121,14 +121,30 @@ fn test_mover() {
 fn schema_finder(
     schemalist: &SchemaList,
     schemaname: &str,
+    schemalist_name: &Vec<&str>,
     data: &Vec<(String, String)>,
 ) -> Option<MoveTree> {
-    for schema in schemalist.get_children(schemaname)? {
+    let schemas_from_names = schemalist_name
+        .iter()
+        .filter_map(|name| schemalist.get(name))
+        .collect::<Vec<&Schema>>();
+
+    for schema in schemas_from_names {
         let related_data = prune_unrelated_data(data, &schema.name);
         if schema.is_fit(&related_data) {
             let (data_pruned, data_rest) = prune_data(&data, &schema);
 
-            let a = schema_finder(schemalist, &schema.name, &data_rest);
+            let schema_names = schemalist
+                .get_children(&schema.name)
+                .unwrap_or_default()
+                .iter()
+                .map(|d| {
+                    let tes = d.name.as_str();
+                    tes
+                })
+                .collect::<Vec<&str>>();
+
+            let a = schema_finder(schemalist, &schema.name, &schema_names, &data_rest);
             match a {
                 None => continue,
                 Some(a) => {
@@ -297,7 +313,7 @@ impl MoveTree {
     fn to_path(&self, sl: &SchemaList) -> String {
         // TODO: support lower char
 
-        let schema = match sl.list.get(&self.name) {
+        let schema = match sl.get(&self.name) {
             Some(s) => s,
             None => return String::new(),
         };
@@ -320,7 +336,7 @@ fn finder_test() {
         "name! epinum(num) | file | [Anime] %name% ",
     );
     // schemalist.parse_format("Video".to_owned(), "tags | |  ");
-    schemalist.parse_format("books".to_owned(), "name! artist | page | [Book] %name% ");
+    schemalist.parse_format("Books".to_owned(), "name! artist | page | [Book] %name% ");
     schemalist.parse_format("page".to_owned(), "number(num) ext | | %num%.%ext% ");
     schemalist.parse_format("root".to_owned(), " | anime books | root ");
     schemalist.parse_format("file".to_owned(), "tags name ext | | %name%.%ext% ");
@@ -351,8 +367,8 @@ fn finder_test() {
     // let book_data = vec![S!(name, Math), S!(artist, John)];
     // println!("{}", res1);
 
-    let res1 = schema_finder(&schemalist, "root", &anime_data);
-    let res2 = schema_finder(&schemalist, "root", &book_data);
+    let res1 = schema_finder(&schemalist, "root", &vec!["root"], &anime_data);
+    let res2 = schema_finder(&schemalist, "root", &vec!["root"], &book_data);
 
     dbg!(&res1, res1.as_ref().unwrap().to_path(&schemalist));
     dbg!(&res2, res2.as_ref().unwrap().to_path(&schemalist));

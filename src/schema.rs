@@ -269,7 +269,7 @@ impl SchemaList {
         };
 
         self.list
-            .entry(name.clone())
+            .entry(name.to_lowercase())
             .and_modify(|f| {
                 let _ = replace(f, schema.clone());
                 // f = schema.clone();
@@ -312,7 +312,7 @@ impl SchemaList {
         };
 
         self.list
-            .entry(name)
+            .entry(name.to_lowercase())
             .and_modify(|f| {
                 let _ = replace(f, schema.clone());
                 // f = &mut schema.clone();
@@ -336,13 +336,16 @@ impl SchemaList {
     /// None if name is not exists
     pub fn get_children(&self, name: &str) -> Option<Vec<&Schema>> {
         let ty = self
-            .list
             .get(name)?
             .children
             .iter()
             .flat_map(|f| Some(self.list.get(f)?))
             .collect::<Vec<&Schema>>();
         Some(ty)
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Schema> {
+        self.list.get(&name.to_lowercase())
     }
 }
 
@@ -363,9 +366,9 @@ fn test_parse() {
         "any".to_owned(),
         "field1 field2! field3(num) | child1 child2 | filename",
     );
-    sl.parse_format("custom".to_owned(), "field1 field2! field3(num) | any |");
-    sl.parse_format("child1".to_owned(), "testf| |");
-    sl.parse_format("child2".to_owned(), "fs(num)!| |");
+    sl.parse_format("Custom".to_owned(), "field1 field2! field3(num) | any |");
+    sl.parse_format("Child1".to_owned(), "testf| |");
+    sl.parse_format("Child2".to_owned(), "fs(num)!| |");
     dbg!(&sl.list);
     // sl.list.iter().for_each(|(_, rc)| {
     //     dbg!(rc.to_format());
