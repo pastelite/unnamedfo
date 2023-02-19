@@ -33,6 +33,12 @@ impl<'se> Serialize for CommaSeperated {
     }
 }
 
+impl FromIterator<String> for CommaSeperated {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        CommaSeperated(iter.into_iter().collect())
+    }
+}
+
 struct CommaSeperatedVisitor;
 impl<'de> de::Visitor<'de> for CommaSeperatedVisitor {
     type Value = Vec<String>;
@@ -113,6 +119,20 @@ pub struct SchemaConfigItem {
     pub children: CommaSeperated,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+}
+
+impl SchemaConfigItem {
+    fn combine(&self, other: &SchemaConfigItem) -> SchemaConfigItem {
+        let mut fields = self.fields.0.clone();
+        fields.extend(other.fields.0.clone());
+        let mut children = self.children.0.clone();
+        children.extend(other.children.0.clone());
+        SchemaConfigItem {
+            fields: CommaSeperated(fields),
+            children: CommaSeperated(children),
+            filename: self.filename.clone(),
+        }
+    }
 }
 
 /// example in yaml, to be change to comma seperated
@@ -236,7 +256,11 @@ pub struct MetaConfig {
     pub other: SchemaConfigItem,
 }
 
-impl MetaConfig {
+trait Combine<T> {
+    fn combine(&mut self, other: T);
+}
+
+impl Combine<&Self> for MetaConfig {
     fn combine(&mut self, other: &MetaConfig) {
         if self.schema.is_none() {
             self.schema = other.schema.clone();
@@ -249,6 +273,33 @@ impl MetaConfig {
         // self.other.children.combine(&other.other.children);
         if self.other.filename.is_none() {
             self.other.filename = other.other.filename.clone();
+        }
+    }
+}
+
+impl Combine<&Schema> for MetaConfig {
+    fn combine(&mut self, other: &Schema) {
+        if self.schema.is_some() && !self.ignore_schema {
+            let schema_config = self.other.clone();
+            if schema_config.filename.is_none() {
+                self.other.filename = other.filename.clone();
+            }
+
+            // fields
+            let keyslist: CommaSeperated = other.fields.keys().cloned().collect();
+            if schema_config.fields.0.is_empty() {
+                self.other.fields = keyslist;
+            } else {
+                self.other.fields.0.extend(keyslist.0);
+            }
+
+            // children
+            let childlist = other.children.clone().into_iter().collect();
+            if schema_config.children.0.is_empty() {
+                self.other.children = childlist;
+            } else {
+                self.other.children.0.extend(childlist.0);
+            }
         }
     }
 }
@@ -331,6 +382,19 @@ impl Config {
         // }
         // fuck it will do later
     }
+
+    /// Note: get_meta will "extend" the child/field not replace it.
+    /// If you want other behavior please fix this.
+    pub fn get_meta(&self, sl: &SchemaList) -> MetaConfig {
+        let mut meta = self.meta.clone();
+        if meta.schema.is_none() {
+            return meta;
+        } else {
+            let schema = sl.get(&meta.schema.as_ref().unwrap()).unwrap();
+            meta.combine(schema);
+            return meta;
+        }
+    }
 }
 
 #[test]
@@ -338,7 +402,9 @@ fn test_combine() {
     let mut config1: Config = serde_yaml::from_str(
         r#"
         _meta:
-            type: Anime
+            schema: Anime
+            children: La2
+            filename: "testasddad"
         _schema:
             Anime:
                 fields: anime_name!, tags(tags), startDate, episodeNum
@@ -379,8 +445,11 @@ fn test_combine() {
 
     dbg!(&config1, &config2);
 
-    config1.combine_config(&config2, true);
-    dbg!(&config1);
+    // config1.combine_config(&config2, true);
+    // dbg!(&config1);
+
+    let config1_sl = SchemaList::from(&config1.schema);
+    dbg!(&config1.get_meta(&config1_sl));
 }
 
 #[test]

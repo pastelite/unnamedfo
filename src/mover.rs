@@ -68,6 +68,7 @@ impl Move {
             );
             match matches {
                 Some(matches) => {
+                    // TODO: fix this
                     let movetree = schema_finder(&schemalist, &schemaname, &vec![], &matches);
                     dbg!(&movetree);
                     println!("move to {}", movetree.unwrap().to_path(&schemalist));
