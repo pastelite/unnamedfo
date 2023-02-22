@@ -111,8 +111,14 @@ impl FileHelper {
         }
     }
 
+    pub fn get_path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn read_config(&self) -> Result<Config, FOError> {
         let mut config: Config = Default::default();
+
+        // TODO: add other stuff
 
         // yaml outside
         read_file_to_combine_config(&mut config, &self.path.with_extension("yaml"), |yaml| {
@@ -123,6 +129,7 @@ impl FileHelper {
             &self.path.with_extension("schema.yaml"),
             |yaml| {
                 let schema = serde_yaml::from_str::<SchemaConfig>(yaml)?;
+                // parse .schema.yaml as schema
                 Ok(Config {
                     schema,
                     ..Default::default()
@@ -130,11 +137,25 @@ impl FileHelper {
             },
         )?;
 
+        // yaml inside
         read_file_to_combine_config(&mut config, &self.path.join("_data.yaml"), |yaml| {
             serde_yaml::from_str::<Config>(yaml).map_err(|e| e.into())
         })?;
 
         Ok(config)
+    }
+
+    pub fn read_dir(&self) -> Result<Vec<FileHelper>, FOError> {
+        let mut files = vec![];
+        for entry in fs::read_dir(&self.path)? {
+            let entry = entry?;
+            let path = entry.path();
+            files.push(FileHelper::new(path));
+            // if path.is_dir() {
+            //     files.push(FileHelper::new(path));
+            // }
+        }
+        Ok(files)
     }
 }
 

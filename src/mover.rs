@@ -28,23 +28,23 @@ use crate::{
     schema::{self, Schema, SchemaList},
 };
 
-struct Move {
+pub struct Mover {
     path: PathBuf,
 }
 
-impl Move {
-    fn new<P: AsRef<Path>>(path: P) -> Self {
+impl Mover {
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
             path: path.as_ref().to_owned(),
         }
     }
 
-    fn move_file(
+    pub fn get_path(
         &self,
         config: &Config,
         schemalist: &SchemaList,
-        schemaname: &str,
-    ) -> Result<(), FOError> {
+        // schemanames: &Vec<&str>,
+    ) -> Result<String, FOError> {
         // read import config
         for (pattern, var) in &config.import.list {
             // deal with commaseperated
@@ -68,32 +68,35 @@ impl Move {
             );
             match matches {
                 Some(matches) => {
-                    // TODO: fix this
-                    let movetree = schema_finder(&schemalist, &schemaname, &vec![], &matches);
+                    let meta = config.get_meta(schemalist);
+                    let schema_names = meta
+                        .other
+                        .children
+                        .0
+                        .iter()
+                        .map(|f| f.as_str())
+                        .collect::<Vec<&str>>();
+
+                    let movetree = schema_finder(&schemalist, &schema_names, &matches);
+
                     dbg!(&movetree);
-                    println!("move to {}", movetree.unwrap().to_path(&schemalist));
-
-                    // loop through schema
-
-                    // for schema in schemalist
-                    //     .get_children(&schemaname)
-                    //     .ok_or(FOError::SchemaError("NotFound".to_owned()))?
-                    // {
-                    //     schema.is_fit(&matches);
-                    // }
+                    return Ok(movetree.unwrap().to_path(&schemalist));
+                    // println!("move to {}", movetree.unwrap().to_path(&schemalist));
                 }
                 None => {
                     continue;
                 }
             }
         }
-        Ok(())
+        Err(FOError::PatternError("No pattern match".to_owned()))
     }
 }
 
 #[test]
 fn test_mover() {
     let config = r#"
+        _meta:
+            children: anime
         _schema:
             anime:
                filename: '%name%'
@@ -112,16 +115,16 @@ fn test_mover() {
     let schemalist = SchemaList::from(&parsed_config.schema);
     dbg!(&schemalist);
 
+    // let schemanames = parsed_config.me
+
     // let schemalist = SchemaList::parse_config(&mut self, name, config)
-    let moves = Move::new("./testdir/test-ad.mp4");
-    moves
-        .move_file(&parsed_config, &schemalist, "root")
-        .unwrap();
+    let moves = Mover::new("./testdir/test-ad.mp4");
+    moves.get_path(&parsed_config, &schemalist).unwrap();
 }
 
 fn schema_finder(
     schemalist: &SchemaList,
-    schemaname: &str,
+    // schemaname: &str,
     schemalist_name: &Vec<&str>,
     data: &Vec<(String, String)>,
 ) -> Option<MoveTree> {
@@ -145,7 +148,7 @@ fn schema_finder(
                 })
                 .collect::<Vec<&str>>();
 
-            let a = schema_finder(schemalist, &schema.name, &schema_names, &data_rest);
+            let a = schema_finder(schemalist, &schema_names, &data_rest);
             match a {
                 None => continue,
                 Some(a) => {
@@ -318,11 +321,16 @@ impl MoveTree {
             Some(s) => s,
             None => return String::new(),
         };
-        let result = String::new();
 
         let str = schema.generate_string(&self.fields);
         if self.children.is_some() {
-            format!("{}/{}", str, self.children.as_ref().unwrap().to_path(sl))
+            let child_path = self.children.as_ref().unwrap().to_path(sl);
+            if child_path.is_empty() {
+                str
+            } else {
+                format!("{}/{}", str, child_path)
+            }
+            // format!("{}/{}", str, self.children.as_ref().unwrap().to_path(sl))
         } else {
             str
         }
@@ -368,8 +376,8 @@ fn finder_test() {
     // let book_data = vec![S!(name, Math), S!(artist, John)];
     // println!("{}", res1);
 
-    let res1 = schema_finder(&schemalist, "root", &vec!["root"], &anime_data);
-    let res2 = schema_finder(&schemalist, "root", &vec!["root"], &book_data);
+    let res1 = schema_finder(&schemalist, &vec!["root"], &anime_data);
+    let res2 = schema_finder(&schemalist, &vec!["root"], &book_data);
 
     dbg!(&res1, res1.as_ref().unwrap().to_path(&schemalist));
     dbg!(&res2, res2.as_ref().unwrap().to_path(&schemalist));

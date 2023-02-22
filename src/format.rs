@@ -93,7 +93,7 @@ impl PatternString {
         let mut i = 0;
         let (_, (varlist, regex_pattern)) =
             any(pattern).map_err(|e| FOError::PatternError(e.to_string()))?;
-        let regex = Regex::new(&regex_pattern).unwrap();
+        let regex = Regex::new(&format!("^{}$", &regex_pattern)).unwrap();
         let varlist = varlist
             .into_iter()
             .map(|d| {
