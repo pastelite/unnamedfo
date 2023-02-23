@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("to be implemented")
         }
         Subcommand::DebugMove => {
+            //TODO: to fucking do. support for using field before in tree before it used
             let helper = FileHelper::new(&args.path);
             let config = helper.read_config()?;
             let sl = SchemaList::from(&config.schema);

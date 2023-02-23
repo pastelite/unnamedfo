@@ -1,5 +1,6 @@
 use std::{
     cmp::max,
+    collections::HashMap,
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
@@ -208,4 +209,106 @@ fn test_read_config() {
     let file_helper = FileHelper::new("./testdir/test.txt");
     let config = file_helper.read_config().unwrap();
     dbg!(config);
+}
+
+pub fn match_text(full: &str, short: &str) -> bool {
+    let full = full.to_lowercase();
+    let short = short.to_lowercase();
+    let mut full = full.chars();
+    let mut short = short.chars();
+
+    loop {
+        match (&full.next(), &short.next()) {
+            (Some(f), Some(s)) if !f.eq(s) => return false,
+            (None, _) | (_, None) => break,
+            _ => continue,
+        }
+    }
+    true
+}
+
+#[derive(Debug)]
+pub struct FieldHashMapBuilder {
+    // field, (schema_notation, data)
+    list: HashMap<String, (String, String)>,
+    schema_name: String,
+}
+
+impl FieldHashMapBuilder {
+    pub fn new<T: AsRef<str>>(name: T) -> Self {
+        Self {
+            list: HashMap::new(),
+            schema_name: String::from(name.as_ref()),
+        }
+    }
+    pub fn insert(mut self, data: &Vec<(String, String)>) -> Self {
+        // let mut map = HashMap::new();
+        for (field, data) in data {
+            let (schema_notation, field) = if field.contains(".") {
+                let mut split = field.split(".");
+                let schema_notation = split.next().unwrap();
+                let field = split.collect::<Vec<&str>>().join(".");
+                (schema_notation.to_owned(), field)
+            } else {
+                ("".to_owned(), field.to_owned())
+            };
+            // let schema_notation = field.replace(".", "_");
+            if (match_text(&schema_notation, &self.schema_name)) {
+                self.list
+                    .entry(field.to_owned())
+                    .and_modify(|(item_schema_notation, item_data)| {
+                        if schema_notation.len() > item_schema_notation.len() {
+                            *item_schema_notation = schema_notation.to_owned();
+                            *item_data = data.to_owned();
+                        }
+                    })
+                    .or_insert((schema_notation, data.to_owned()));
+            }
+            // self.list
+            //     .insert(field.to_owned(), (schema_notation, data.to_owned()));
+        }
+        self
+        // Self { list: map }
+    }
+
+    pub fn to_map(self) -> HashMap<String, String> {
+        self.list
+            .iter()
+            .map(|(field, (_, data))| (field.to_owned(), data.to_owned()))
+            .collect()
+    }
+}
+
+// impl From<&Vec<(String, String)>> for FieldDotListHelper {
+//     fn from(list: &Vec<(String, String)>) -> Self {
+//         let mut map = HashMap::new();
+//         for (field, data) in list {
+//             let (schema_notation, field) = if field.contains(".") {
+//                 let mut split = field.split(".");
+//                 let schema_notation = split.next().unwrap();
+//                 let field = split.collect::<Vec<&str>>().join(".");
+//                 (schema_notation.to_owned(), field)
+//             } else {
+//                 ("".to_owned(), field.to_owned())
+//             };
+//             // let schema_notation = field.replace(".", "_");
+//             map.insert(field.to_owned(), (schema_notation, data.to_owned()));
+//         }
+//         Self { list: map }
+//     }
+// }
+
+#[test]
+fn test_field_dot_list() {
+    let data = vec![
+        ("a.b".to_owned(), "1".to_owned()),
+        ("a.c".to_owned(), "2".to_owned()),
+        ("a.d".to_owned(), "3".to_owned()),
+        ("b".to_owned(), "4".to_owned()),
+        ("ab.d".to_owned(), "5".to_owned()),
+        ("abn.d".to_owned(), "6".to_owned()),
+    ];
+
+    let mut helper = FieldHashMapBuilder::new("abc").insert(&data);
+    dbg!(helper.to_map());
 }

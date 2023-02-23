@@ -14,6 +14,7 @@ use regex::{Captures, Regex};
 use crate::{
     config_reader::{CommaSeperated, ConfigDatatype, SchemaConfig, SchemaConfigItem},
     format::FormatString,
+    helper::FieldHashMapBuilder,
 };
 
 #[derive(Clone, Debug)]
@@ -152,7 +153,8 @@ impl Schema {
     }
 
     pub fn generate_string(&self, data: &Vec<(String, String)>) -> String {
-        let data_map = data.iter().map(|d| (&d.0, &d.1)).collect::<HashMap<_, _>>();
+        // let data_map = data.iter().map(|d| (&d.0, &d.1)).collect::<HashMap<_, _>>();
+        let data_map = FieldHashMapBuilder::new(&self.name).insert(&data).to_map();
 
         let filename_formatter = FormatString::parse(&self.filename.as_ref().unwrap());
         let vars = filename_formatter

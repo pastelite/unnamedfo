@@ -25,6 +25,7 @@ use crate::{
     config_reader::Config,
     error::FOError,
     format::PatternString,
+    helper::match_text,
     schema::{self, Schema, SchemaList},
 };
 
@@ -80,7 +81,7 @@ impl Mover {
                     let movetree = schema_finder(&schemalist, &schema_names, &matches);
 
                     dbg!(&movetree);
-                    return Ok(movetree.unwrap().to_path(&schemalist));
+                    return Ok(movetree.unwrap().to_path(&schemalist, &mut vec![]));
                     // println!("move to {}", movetree.unwrap().to_path(&schemalist));
                 }
                 None => {
@@ -135,6 +136,7 @@ fn schema_finder(
 
     for schema in schemas_from_names {
         let related_data = prune_unrelated_data(data, &schema.name);
+        // dbg!(&related_data, &schema);
         if schema.is_fit(&related_data) {
             let (data_pruned, data_rest) = prune_data(&data, &schema);
 
@@ -166,22 +168,6 @@ fn schema_finder(
         fields: remove_dot(&data),
         children: None,
     })
-}
-
-fn match_text(full: &str, short: &str) -> bool {
-    let full = full.to_lowercase();
-    let short = short.to_lowercase();
-    let mut full = full.chars();
-    let mut short = short.chars();
-
-    loop {
-        match (&full.next(), &short.next()) {
-            (Some(f), Some(s)) if !f.eq(s) => return false,
-            (None, _) | (_, None) => break,
-            _ => continue,
-        }
-    }
-    true
 }
 
 fn remove_dot(data: &Vec<(String, String)>) -> Vec<(String, String)> {
@@ -314,7 +300,7 @@ impl Debug for MoveTree {
 }
 
 impl MoveTree {
-    fn to_path(&self, sl: &SchemaList) -> String {
+    fn to_path(&self, sl: &SchemaList, field: &mut Vec<(String, String)>) -> String {
         // TODO: support lower char
 
         let schema = match sl.get(&self.name) {
@@ -322,9 +308,15 @@ impl MoveTree {
             None => return String::new(),
         };
 
-        let str = schema.generate_string(&self.fields);
+        self.fields.iter().for_each(|(k, v)| {
+            if !field.contains(&(k.to_owned(), v.to_owned())) {
+                field.push((k.to_owned(), v.to_owned()))
+            }
+        });
+
+        let str = schema.generate_string(&field);
         if self.children.is_some() {
-            let child_path = self.children.as_ref().unwrap().to_path(sl);
+            let child_path = self.children.as_ref().unwrap().to_path(sl, field);
             if child_path.is_empty() {
                 str
             } else {
@@ -379,8 +371,14 @@ fn finder_test() {
     let res1 = schema_finder(&schemalist, &vec!["root"], &anime_data);
     let res2 = schema_finder(&schemalist, &vec!["root"], &book_data);
 
-    dbg!(&res1, res1.as_ref().unwrap().to_path(&schemalist));
-    dbg!(&res2, res2.as_ref().unwrap().to_path(&schemalist));
+    dbg!(
+        &res1,
+        res1.as_ref().unwrap().to_path(&schemalist, &mut vec![])
+    );
+    dbg!(
+        &res2,
+        res2.as_ref().unwrap().to_path(&schemalist, &mut vec![])
+    );
 
     // dbg!(schema_finder(
     //     &schemalist,
